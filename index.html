@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schemaverktyg — Demora Assistansservice (6 veckor)</title>
+<style>
+  :root{ --bg:#f4f6f9; --line:#cfd6e0; --head:#2b3a55; --ok:#1f9d55; --warn:#e8f0fe;
+         --bad:#d64545; --badbg:#fde8e8; --chip:#e7ecf3; }
+  *{box-sizing:border-box}
+  body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:0;background:var(--bg);color:#1c2533}
+  header{background:var(--head);color:#fff;padding:14px 18px}
+  header h1{margin:0;font-size:18px}
+  header p{margin:4px 0 0;font-size:12.5px;opacity:.85}
+  .wrap{padding:14px 18px 60px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+  .panel h2{margin:0 0 8px;font-size:14px;color:var(--head)}
+  .muted{color:#5b6b80;font-size:12.5px}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 10px}
+  button.primary{background:var(--head);color:#fff;border-color:var(--head)}
+  input{font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th,td{border:1px solid var(--line);padding:0;text-align:center}
+  th{background:#eef2f7;font-weight:600;padding:4px 3px}
+  .wk{background:var(--head);color:#fff;font-size:11px}
+  .namecell{background:#f0f3f8;font-weight:600;text-align:left;padding:4px 8px;white-space:nowrap;position:sticky;left:0;z-index:2}
+  .daycell{width:30px;height:30px;cursor:pointer;font-weight:700}
+  .daycell:hover{outline:2px solid var(--head);outline-offset:-2px}
+  .sun{background:#fbecec}
+  .sat{background:#fdf6e9}
+  .viol{background:var(--badbg)!important;color:var(--bad)}
+  .legend span{display:inline-block;margin-right:12px;font-size:12.5px}
+  .swatch{display:inline-block;width:22px;height:16px;border:1px solid var(--line);border-radius:3px;vertical-align:middle;margin-right:4px;font-size:10px;text-align:center;line-height:16px;font-weight:700}
+  .issues li{margin:3px 0;font-size:13px}
+  .issues .bad{color:var(--bad)}
+  .issues .good{color:var(--ok);font-weight:600}
+  .shiftrow{display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap}
+  .hours{font-size:11px;color:#5b6b80}
+  .tot{font-weight:700}
+  details summary{cursor:pointer;font-size:13px;color:var(--head)}
+  .small{font-size:11.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Schemaverktyg — 6-veckorsschema</h1>
+  <p>Du flyttar passen själv (klicka i rutorna). Verktyget räknar timmar och varnar när en regel bryts. Allt sparas i din webbläsare.</p>
+</header>
+<div class="wrap">
+
+  <div class="panel">
+    <h2>Regler som bevakas</h2>
+    <ul class="muted" style="margin:0;padding-left:18px">
+      <li><b>Minst 36 h sammanhängande ledigt</b> under varje 7-dagarsperiod (veckovila).</li>
+      <li><b>Aldrig mer än 24 h sammanhängande arbete.</b></li>
+      <li><b>Täckning dygnet runt</b> + <b>dubbelbemanning 07:30–16:00</b> (minst 2 personer).</li>
+    </ul>
+    <p class="small muted">⚠️ Kontrollera passtiderna nedan så de stämmer med er verklighet — då blir alla beräkningar rätt.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Passtyper <span class="muted">(klicka i schemat för att växla mellan dem)</span></h2>
+    <div id="shiftEditor"></div>
+    <button onclick="addShift()" class="small">+ Lägg till passtyp</button>
+    <div class="legend" id="legend" style="margin-top:8px"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Personal</h2>
+    <div id="staffEditor" class="small"></div>
+    <button onclick="addStaff()" class="small">+ Lägg till person</button>
+  </div>
+
+  <div class="panel" style="overflow-x:auto">
+    <h2>Schema — 6 veckor (klicka i en ruta för att sätta/ändra pass)</h2>
+    <div id="grid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Kontroll &amp; varningar</h2>
+    <ul class="issues" id="issues"></ul>
+  </div>
+
+  <div class="panel">
+    <button class="primary" onclick="save()">💾 Spara</button>
+    <button onclick="exportJson()">⬇️ Exportera (säkerhetskopia)</button>
+    <button onclick="importJson()">⬆️ Importera</button>
+    <button onclick="resetAll()">↺ Börja om</button>
+    <input type="file" id="importFile" style="display:none" accept="application/json">
+    <span class="muted small" id="savedNote"></span>
+  </div>
+</div>
+
+<script>
+// ---------- Default configuration (Kricko can adjust everything) ----------
+const DEFAULT = {
+  staff: ["Linus","Sanne","Åsa","Kricko","Lena","Jossan"],
+  // start/slut i HH:MM. Pass som går över midnatt hanteras automatiskt (slut <= start = nästa dag).
+  shifts: [
+    {code:"X",  name:"Dygnspass (dygnet runt)", start:"07:30", end:"07:30", color:"#dceefc"},
+    {code:"D",  name:"Dag / dubbel 07:30–16:00", start:"07:30", end:"16:00", color:"#e6f6ea"},
+    {code:"DD", name:"Dag lång",                  start:"07:30", end:"22:00", color:"#fdf0e1"}
+  ],
+  // assignments[staffIndex][dayIndex] = shift code or "" (42 dagar = 6 veckor må–sö)
+  cells: {}
+};
+const DAYS = ["Må","Ti","On","To","Fr","Lö","Sö"];
+const NDAYS = 42;
+const LS_KEY = "kricko_schema_v1";
+
+let S = load() || JSON.parse(JSON.stringify(DEFAULT));
+
+// ---------- Helpers ----------
+function hm2min(s){ const [h,m]=s.split(":").map(Number); return h*60+(m||0); }
+function shiftByCode(c){ return S.shifts.find(x=>x.code===c); }
+// Returnerar arbetsintervall i absoluta minuter från dygn0 00:00 för ett pass på dag d.
+function intervalFor(code, d){
+  const sh = shiftByCode(code); if(!sh) return null;
+  let st = hm2min(sh.start), en = hm2min(sh.end);
+  let dur = en - st; if(dur<=0) dur += 1440;          // över midnatt
+  const startAbs = d*1440 + st;
+  return [startAbs, startAbs+dur];
+}
+function cell(si,di){ return (S.cells[si]&&S.cells[si][di])||""; }
+function setCell(si,di,v){ if(!S.cells[si])S.cells[si]={}; S.cells[si][di]=v; }
+
+// Slå ihop intervall som överlappar/gränsar till varandra -> sammanhängande arbetsblock.
+function mergeBlocks(intervals){
+  if(!intervals.length) return [];
+  intervals.sort((a,b)=>a[0]-b[0]);
+  const out=[intervals[0].slice()];
+  for(let i=1;i<intervals.length;i++){
+    const cur=intervals[i], last=out[out.length-1];
+    if(cur[0] <= last[1]) last[1]=Math.max(last[1],cur[1]); // gränsar (vila=0) eller överlappar
+    else out.push(cur.slice());
+  }
+  return out;
+}
+
+// ---------- Rule engine ----------
+function analyse(){
+  const issues=[]; const violCells={}; // violCells["si-di"]=true
+  // Per person: arbetsblock + vila
+  S.staff.forEach((name,si)=>{
+    const ivs=[];
+    for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv) ivs.push(iv.concat([d])); } }
+    if(!ivs.length) return;
+    const blocks = mergeBlocks(ivs.map(x=>[x[0],x[1]]));
+    // Regel: max 24h sammanhängande
+    blocks.forEach(b=>{
+      const len=(b[1]-b[0])/60;
+      if(len>24+1e-6){
+        issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h) — ${fmtSpan(b)}`});
+        // markera dagarna i blocket
+        for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv && iv[0]>=b[0]-1 && iv[0]<b[1]) violCells[si+"-"+d]=true; } }
+      }
+    });
+    // Regel: minst 36h sammanhängande ledigt inom varje vecka (7-dagarsperiod, må–sö)
+    for(let w=0; w<6; w++){
+      if(!has36freeInWindow(blocks, w*7*1440, (w+1)*7*1440)){
+        issues.push({bad:true,t:`${name}: vecka ${w+1} saknar 36 h sammanhängande ledigt (veckovila).`});
+        for(let d=w*7; d<(w+1)*7; d++){ if(cell(si,d)) violCells[si+"-"+d]=true; }
+      }
+    }
+  });
+  // Täckning per dygn
+  for(let d=0; d<NDAYS; d++){
+    const cov=new Array(48).fill(0); // 30-min luckor 00:00–24:00 för detta dygn
+    S.staff.forEach((name,si)=>{
+      const c=cell(si,d); if(!c) return; const iv=intervalFor(c,d); if(!iv) return;
+      mark(cov, iv, d*1440);
+      // pass kan sträcka sig in i nästa dygn — täck även början av nästa dag
+    });
+    // även pass från föregående dag som går in i detta dygn
+    if(d>0){ S.staff.forEach((name,si)=>{ const c=cell(si,d-1); if(!c) return; const iv=intervalFor(c,d-1); if(!iv) return; mark(cov, iv, d*1440); }); }
+    // hål i dygnet-runt?
+    let gap=cov.some((x,i)=>x<1);
+    if(gap) issues.push({bad:true,t:`Dag ${dlabel(d)}: täckning saknas dygnet runt (minst 1 person varje timme).`});
+    // dubbelbemanning 07:30–16:00 (luckor 15..31 => 07:30–16:00)
+    let dbl=true; for(let i=15;i<32;i++){ if(cov[i]<2) dbl=false; }
+    if(!dbl) issues.push({warn:true,t:`Dag ${dlabel(d)}: mindre än 2 personer någon gång 07:30–16:00 (dubbelbemanning).`});
+  }
+  return {issues, violCells};
+}
+function mark(cov, iv, dayBase){
+  // täck 30-min luckor i detta dygn (0..1440) som överlappar iv
+  let a=Math.max(iv[0]-dayBase,0), b=Math.min(iv[1]-dayBase,1440);
+  for(let t=a; t<b; t+=30){ const idx=Math.floor(t/30); if(idx>=0&&idx<48) cov[idx]++; }
+}
+function has36freeInWindow(blocks, wS, wE){
+  // Finns det >=36 h sammanhängande ledigt HELT inom 7-dagarsfönstret [wS,wE)?
+  // (Glidande fönster = striktaste, oomtvistliga tolkningen av "varje period om sju dagar".)
+  const bs=blocks.filter(b=>b[1]>wS && b[0]<wE)
+                 .map(b=>[Math.max(b[0],wS),Math.min(b[1],wE)])
+                 .sort((a,b)=>a[0]-b[0]);
+  let prev=wS;
+  for(const b of bs){ if(b[0]-prev >= 36*60) return true; prev=Math.max(prev,b[1]); }
+  return (wE-prev) >= 36*60;
+}
+function fmtSpan(b){ return `${dlabel(Math.floor(b[0]/1440))} ${pad(Math.floor((b[0]%1440)/60))}:${pad(b[0]%60)} → ${dlabel(Math.floor((b[1]-1)/1440))} ${pad(Math.floor((b[1]%1440)/60))}:${pad(b[1]%60)}`; }
+function pad(n){ return String(n).padStart(2,"0"); }
+function dlabel(d){ const w=Math.floor(d/7)+1, dd=DAYS[d%7]; return `v${w} ${dd}`; }
+
+// ---------- Rendering ----------
+function render(){
+  renderShifts(); renderStaff(); renderLegend();
+  const {issues, violCells}=analyse();
+  renderGrid(violCells); renderIssues(issues);
+}
+function renderLegend(){
+  const el=document.getElementById("legend");
+  el.innerHTML = S.shifts.map(s=>`<span><span class="swatch" style="background:${s.color}">${s.code}</span>${s.name} <span class="hours">(${s.start}–${s.end})</span></span>`).join("")
+    + `<span><span class="swatch">·</span>ledig</span>`;
+}
+function renderShifts(){
+  const el=document.getElementById("shiftEditor");
+  el.innerHTML = S.shifts.map((s,i)=>`
+    <div class="shiftrow">
+      <input style="width:46px" value="${s.code}" onchange="upd('shift',${i},'code',this.value)">
+      <input style="width:200px" value="${s.name}" onchange="upd('shift',${i},'name',this.value)">
+      <label class="small">start <input type="time" value="${s.start}" onchange="upd('shift',${i},'start',this.value)"></label>
+      <label class="small">slut <input type="time" value="${s.end}" onchange="upd('shift',${i},'end',this.value)"></label>
+      <input type="color" value="${s.color}" onchange="upd('shift',${i},'color',this.value)">
+      <button class="small" onclick="delShift(${i})">ta bort</button>
+    </div>`).join("");
+}
+function renderStaff(){
+  const el=document.getElementById("staffEditor");
+  el.innerHTML = S.staff.map((n,i)=>`<span style="display:inline-block;margin:2px 6px 2px 0">
+    <input style="width:120px" value="${n}" onchange="updStaff(${i},this.value)">
+    <button class="small" onclick="delStaff(${i})">×</button></span>`).join("");
+}
+function renderGrid(violCells){
+  let h='<table><thead><tr><th class="namecell">Personal</th>';
+  for(let w=0;w<6;w++) h+=`<th class="wk" colspan="7">Vecka ${w+1}</th>`;
+  h+='</tr><tr><th class="namecell"></th>';
+  for(let w=0;w<6;w++) for(let d=0;d<7;d++) h+=`<th class="${d===6?'sun':d===5?'sat':''}">${DAYS[d]}</th>`;
+  h+='</tr></thead><tbody>';
+  S.staff.forEach((name,si)=>{
+    h+=`<tr><td class="namecell">${name}<div class="hours">${weekHours(si)}</div></td>`;
+    for(let d=0;d<NDAYS;d++){
+      const c=cell(si,d); const sh=shiftByCode(c);
+      const bg = violCells[si+"-"+d] ? '' : (sh?`style="background:${sh.color}"`:'');
+      const cls = 'daycell '+(violCells[si+"-"+d]?'viol ':'')+(d%7===6?'sun':d%7===5?'sat':'');
+      h+=`<td class="${cls}" ${bg} onclick="cycle(${si},${d})" title="${sh?sh.name:'ledig'}">${c||'·'}</td>`;
+    }
+    h+='</tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById("grid").innerHTML=h;
+}
+function weekHours(si){
+  const wk=[0,0,0,0,0,0];
+  for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv) wk[Math.floor(d/7)]+=(iv[1]-iv[0])/60; } }
+  const tot=wk.reduce((a,b)=>a+b,0);
+  return 'tim/v: '+wk.map(x=>x?x.toFixed(0):'–').join(' ')+` · <span class="tot">Σ${tot.toFixed(0)}h</span>`;
+}
+function renderIssues(issues){
+  const el=document.getElementById("issues");
+  if(!issues.length){ el.innerHTML='<li class="good">✓ Inga regelbrott hittade. Schemat ser bra ut!</li>'; return; }
+  const bad=issues.filter(i=>i.bad), warn=issues.filter(i=>!i.bad);
+  el.innerHTML = bad.map(i=>`<li class="bad">✗ ${i.t}</li>`).join('')
+              + warn.map(i=>`<li>⚠ ${i.t}</li>`).join('');
+}
+
+// ---------- Interactions ----------
+function cycle(si,di){
+  const codes=["",...S.shifts.map(s=>s.code)];
+  const cur=cell(si,di); let i=codes.indexOf(cur); i=(i+1)%codes.length;
+  setCell(si,di,codes[i]); render();
+}
+function upd(kind,i,field,val){ if(kind==='shift'){ S.shifts[i][field]=val; } render(); }
+function updStaff(i,v){ S.staff[i]=v; render(); }
+function addShift(){ S.shifts.push({code:"N",name:"Nytt pass",start:"08:00",end:"16:00",color:"#eee"}); render(); }
+function delShift(i){ S.shifts.splice(i,1); render(); }
+function addStaff(){ S.staff.push("Ny person"); render(); }
+function delStaff(i){ if(!confirm("Ta bort "+S.staff[i]+"?"))return; S.staff.splice(i,1); const nc={}; Object.keys(S.cells).forEach(k=>{k=+k; if(k<i)nc[k]=S.cells[k]; else if(k>i)nc[k-1]=S.cells[k];}); S.cells=nc; render(); }
+
+// ---------- Persistence ----------
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(S)); note("Sparat ✓ "+new Date().toLocaleTimeString('sv-SE')); }
+function load(){ try{ const r=localStorage.getItem(LS_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
+function note(t){ document.getElementById("savedNote").textContent=t; }
+function exportJson(){ const b=new Blob([JSON.stringify(S,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="schema_backup.json"; a.click(); }
+function importJson(){ const f=document.getElementById("importFile"); f.onchange=()=>{ const r=new FileReader(); r.onload=()=>{ try{ S=JSON.parse(r.result); render(); note("Importerat ✓"); }catch(e){ alert("Kunde inte läsa filen."); } }; r.readAsText(f.files[0]); }; f.click(); }
+function resetAll(){ if(confirm("Börja om från grundschemat? (din sparade version skrivs över när du sparar)")){ S=JSON.parse(JSON.stringify(DEFAULT)); render(); } }
+
+// autosave on changes
+const _origRender=render; render=function(){ _origRender(); localStorage.setItem(LS_KEY+"_auto", JSON.stringify(S)); };
+render();
+</script>
+</body>
+</html>
