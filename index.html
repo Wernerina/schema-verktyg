@@ -93,6 +93,11 @@
   </div>
 
   <div class="panel">
+    <h2>Veckotimmar per person <span class="muted">(timmar/vecka + total)</span></h2>
+    <div id="hoursTable" style="overflow-x:auto"></div>
+  </div>
+
+  <div class="panel">
     <h2>Kontroll &amp; varningar</h2>
     <ul class="issues" id="issues"></ul>
   </div>
@@ -267,7 +272,7 @@ function render(){
   renderShifts(); renderStaff(); renderLegend();
   const sd=document.getElementById("startDate"); if(sd) sd.value=S.startDate||"";
   const {issues, violCells}=analyse();
-  renderGrid(violCells); renderIssues(issues);
+  renderGrid(violCells); renderHoursTable(); renderIssues(issues);
 }
 function renderLegend(){
   const el=document.getElementById("legend");
@@ -299,7 +304,7 @@ function renderGrid(violCells){
   for(let w=0;w<6;w++) for(let d=0;d<7;d++){ const dt=dateForDay(w*7+d); h+=`<th class="${d===6?'sun':d===5?'sat':''}">${DAYS[d]}${dt?'<br><span class="small" style="font-weight:400">'+dt+'</span>':''}</th>`; }
   h+='</tr></thead><tbody>';
   S.staff.forEach((name,si)=>{
-    h+=`<tr><td class="namecell">${name}<div class="hours">${weekHours(si)}</div></td>`;
+    h+=`<tr><td class="namecell">${name}</td>`;
     for(let d=0;d<NDAYS;d++){
       const c=cell(si,d); const sh=shiftByCode(c);
       const bg = violCells[si+"-"+d] ? '' : (sh?`style="background:${sh.color}"`:'');
@@ -311,11 +316,25 @@ function renderGrid(violCells){
   h+='</tbody></table>';
   document.getElementById("grid").innerHTML=h;
 }
-function weekHours(si){
+function weekHoursData(si){
   const wk=[0,0,0,0,0,0];
   for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv) wk[Math.floor(d/7)]+=(iv[1]-iv[0])/60; } }
-  const tot=wk.reduce((a,b)=>a+b,0);
-  return 'tim/v: '+wk.map(x=>x?x.toFixed(0):'–').join(' ')+` · <span class="tot">Σ${tot.toFixed(0)}h</span>`;
+  return {wk, tot:wk.reduce((a,b)=>a+b,0)};
+}
+// Veckotimmar i en egen lista (flyttad ut ur namnkolumnen så att schemat blir smalare
+// och alla 6 veckor får plats på skärmen även med datum). Önskat av Kricko 2026-06-07.
+function renderHoursTable(){
+  let h='<table><thead><tr><th class="namecell" style="text-align:left">Personal</th>';
+  for(let w=0;w<6;w++) h+=`<th>V${w+1}</th>`;
+  h+='<th>Σ totalt</th></tr></thead><tbody>';
+  S.staff.forEach((name,si)=>{
+    const {wk,tot}=weekHoursData(si);
+    h+=`<tr><td class="namecell" style="text-align:left">${name}</td>`
+      + wk.map(x=>`<td>${x?x.toFixed(0):'–'}</td>`).join('')
+      + `<td class="tot">${tot.toFixed(0)} h</td></tr>`;
+  });
+  h+='</tbody></table>';
+  document.getElementById("hoursTable").innerHTML=h;
 }
 function renderIssues(issues){
   const el=document.getElementById("issues");
