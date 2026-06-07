@@ -73,6 +73,7 @@
 
   <div class="panel" style="overflow-x:auto">
     <h2>Schema — 6 veckor (klicka i en ruta för att sätta/ändra pass)</h2>
+    <div class="muted small" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span></div>
     <div id="grid"></div>
   </div>
 
@@ -99,17 +100,28 @@ const DEFAULT = {
   shifts: [
     {code:"X",  name:"Dygnspass (dygnet runt)", start:"07:30", end:"07:30", color:"#dceefc"},
     {code:"D",  name:"Dag / dubbel 07:30–16:00", start:"07:30", end:"16:00", color:"#e6f6ea"},
-    {code:"DD", name:"Dag lång",                  start:"07:30", end:"22:00", color:"#fdf0e1"}
+    {code:"DD", name:"Dag lång",                  start:"07:30", end:"22:00", color:"#fdf0e1"},
+    {code:"SEM", name:"Semester",     start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
+    {code:"TJL", name:"Tjänstledig",  start:"00:00", end:"00:00", color:"#e4d8f5", leave:true}
   ],
   // assignments[staffIndex][dayIndex] = shift code or "" (42 dagar = 6 veckor må–sö)
-  cells: {}
+  cells: {},
+  startDate: ""   // valfritt: måndag i vecka 1 (ÅÅÅÅ-MM-DD) → visar riktiga datum
 };
+// Specialkoder som INTE är arbete (semester/tjänstledig) — räknas som ledigt, kräver ingen täckning.
+const LEAVE_SHIFTS = [
+  {code:"SEM", name:"Semester",    start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
+  {code:"TJL", name:"Tjänstledig", start:"00:00", end:"00:00", color:"#e4d8f5", leave:true}
+];
 const DAYS = ["Må","Ti","On","To","Fr","Lö","Sö"];
 const NDAYS = 42;
 const TOTMIN = NDAYS*1440;  // hela cykeln i minuter (6-veckorsschemat upprepas → cykliskt)
 const LS_KEY = "kricko_schema_v1";
 
 let S = load() || JSON.parse(JSON.stringify(DEFAULT));
+// Migrering för redan sparade scheman: se till att semester/tjänstledig-koderna och startDate finns.
+LEAVE_SHIFTS.forEach(ls=>{ if(!S.shifts.some(s=>s.code===ls.code)) S.shifts.push(JSON.parse(JSON.stringify(ls))); });
+if(typeof S.startDate!=="string") S.startDate="";
 
 // ---------- Helpers ----------
 function hm2min(s){ const [h,m]=s.split(":").map(Number); return h*60+(m||0); }
@@ -117,6 +129,7 @@ function shiftByCode(c){ return S.shifts.find(x=>x.code===c); }
 // Returnerar arbetsintervall i absoluta minuter från dygn0 00:00 för ett pass på dag d.
 function intervalFor(code, d){
   const sh = shiftByCode(code); if(!sh) return null;
+  if(sh.leave) return null;                            // semester/tjänstledig = ledigt, inget arbetsintervall
   let st = hm2min(sh.start), en = hm2min(sh.end);
   let dur = en - st; if(dur<=0) dur += 1440;          // över midnatt
   const startAbs = d*1440 + st;
@@ -224,16 +237,25 @@ function freeRests(blocks){
 function fmtSpan(b){ return `${dlabel(Math.floor(b[0]/1440))} ${pad(Math.floor((b[0]%1440)/60))}:${pad(b[0]%60)} → ${dlabel(Math.floor((b[1]-1)/1440))} ${pad(Math.floor((b[1]%1440)/60))}:${pad(b[1]%60)}`; }
 function pad(n){ return String(n).padStart(2,"0"); }
 function dlabel(d){ const w=Math.floor(d/7)+1, dd=DAYS[d%7]; return `v${w} ${dd}`; }
+// Riktigt kalenderdatum för dag-index idx (om startdatum är satt) → "D/M".
+function dateForDay(idx){
+  if(!S.startDate) return '';
+  const dt=new Date(S.startDate+'T00:00:00'); if(isNaN(dt)) return '';
+  dt.setDate(dt.getDate()+idx);
+  return dt.getDate()+'/'+(dt.getMonth()+1);
+}
+function setStart(v){ S.startDate=v; render(); }
 
 // ---------- Rendering ----------
 function render(){
   renderShifts(); renderStaff(); renderLegend();
+  const sd=document.getElementById("startDate"); if(sd) sd.value=S.startDate||"";
   const {issues, violCells}=analyse();
   renderGrid(violCells); renderIssues(issues);
 }
 function renderLegend(){
   const el=document.getElementById("legend");
-  el.innerHTML = S.shifts.map(s=>`<span><span class="swatch" style="background:${s.color}">${s.code}</span>${s.name} <span class="hours">(${s.start}–${s.end})</span></span>`).join("")
+  el.innerHTML = S.shifts.map(s=>`<span><span class="swatch" style="background:${s.color}">${s.code}</span>${s.name} <span class="hours">(${s.leave?'ledig':s.start+'–'+s.end})</span></span>`).join("")
     + `<span><span class="swatch">·</span>ledig</span>`;
 }
 function renderShifts(){
@@ -258,7 +280,7 @@ function renderGrid(violCells){
   let h='<table><thead><tr><th class="namecell">Personal</th>';
   for(let w=0;w<6;w++) h+=`<th class="wk" colspan="7">Vecka ${w+1}</th>`;
   h+='</tr><tr><th class="namecell"></th>';
-  for(let w=0;w<6;w++) for(let d=0;d<7;d++) h+=`<th class="${d===6?'sun':d===5?'sat':''}">${DAYS[d]}</th>`;
+  for(let w=0;w<6;w++) for(let d=0;d<7;d++){ const dt=dateForDay(w*7+d); h+=`<th class="${d===6?'sun':d===5?'sat':''}">${DAYS[d]}${dt?'<br><span class="small" style="font-weight:400">'+dt+'</span>':''}</th>`; }
   h+='</tr></thead><tbody>';
   S.staff.forEach((name,si)=>{
     h+=`<tr><td class="namecell">${name}<div class="hours">${weekHours(si)}</div></td>`;
