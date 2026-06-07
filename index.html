@@ -106,6 +106,7 @@ const DEFAULT = {
 };
 const DAYS = ["Må","Ti","On","To","Fr","Lö","Sö"];
 const NDAYS = 42;
+const TOTMIN = NDAYS*1440;  // hela cykeln i minuter (6-veckorsschemat upprepas → cykliskt)
 const LS_KEY = "kricko_schema_v1";
 
 let S = load() || JSON.parse(JSON.stringify(DEFAULT));
@@ -155,11 +156,25 @@ function analyse(){
         for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv && iv[0]>=b[0]-1 && iv[0]<b[1]) violCells[si+"-"+d]=true; } }
       }
     });
-    // Regel: minst 36h sammanhängande ledigt inom varje vecka (7-dagarsperiod, må–sö)
-    for(let w=0; w<6; w++){
-      if(!has36freeInWindow(blocks, w*7*1440, (w+1)*7*1440)){
-        issues.push({bad:true,t:`${name}: vecka ${w+1} saknar 36 h sammanhängande ledigt (veckovila).`});
-        for(let d=w*7; d<(w+1)*7; d++){ if(cell(si,d)) violCells[si+"-"+d]=true; }
+    // Regel: veckovila — minst 36 h sammanhängande ledigt minst en gång per 7-dagarsperiod.
+    // Schemat är CYKLISKT (6-veckorsblocket upprepas), så vilan får ligga vid en periodgräns
+    // (t.ex. "dag 7"). Vi mäter arbetsspannet mellan 36 h-vilorna runt hela cykeln; blir det
+    // någonsin mer än 7 dygn mellan två veckovilor = brott. (Tidigare: fasta må–sö-fönster som
+    // klippte vila vid veckogränsen → falsklarm. Rättat 2026-06-07.)
+    const rests = freeRests(blocks);
+    if(!rests.length){
+      issues.push({bad:true,t:`${name}: saknar 36 h sammanhängande ledigt (veckovila) helt.`});
+      for(let d=0; d<NDAYS; d++){ if(cell(si,d)) violCells[si+"-"+d]=true; }
+    } else {
+      let worst=0, span=null;
+      for(let i=0;i<rests.length;i++){
+        const endA=rests[i][1];
+        const startB=(i+1<rests.length) ? rests[i+1][0] : rests[0][0]+TOTMIN; // cykliskt varv
+        if(startB-endA>worst){ worst=startB-endA; span=[endA,startB]; }
+      }
+      if(worst > 7*1440 + 1){
+        issues.push({bad:true,t:`${name}: ${(worst/1440).toFixed(1)} dygn mellan två veckovilor (max 7) — saknar veckovila.`});
+        for(let d=0; d<NDAYS; d++){ const ds=d*1440, de=(d+1)*1440; if(cell(si,d) && de>span[0] && ds<span[1]) violCells[si+"-"+d]=true; }
       }
     }
   });
@@ -172,7 +187,9 @@ function analyse(){
       // pass kan sträcka sig in i nästa dygn — täck även början av nästa dag
     });
     // även pass från föregående dag som går in i detta dygn
-    if(d>0){ S.staff.forEach((name,si)=>{ const c=cell(si,d-1); if(!c) return; const iv=intervalFor(c,d-1); if(!iv) return; mark(cov, iv, d*1440); }); }
+    // föregående dygns pass som går in i detta dygn — CYKLISKT (dag 0 får spill från sista dagen,
+    // eftersom schemat upprepas). Rättar falsklarmet "täckning saknas mån v1 00:00". 2026-06-07.
+    { const pd=(d-1+NDAYS)%NDAYS; S.staff.forEach((name,si)=>{ const c=cell(si,pd); if(!c) return; let iv=intervalFor(c,pd); if(!iv) return; if(pd>d){ iv=[iv[0]-TOTMIN, iv[1]-TOTMIN]; } mark(cov, iv, d*1440); }); }
     // hål i dygnet-runt?
     let gap=cov.some((x,i)=>x<1);
     if(gap) issues.push({bad:true,t:`Dag ${dlabel(d)}: täckning saknas dygnet runt (minst 1 person varje timme).`});
@@ -187,15 +204,22 @@ function mark(cov, iv, dayBase){
   let a=Math.max(iv[0]-dayBase,0), b=Math.min(iv[1]-dayBase,1440);
   for(let t=a; t<b; t+=30){ const idx=Math.floor(t/30); if(idx>=0&&idx<48) cov[idx]++; }
 }
-function has36freeInWindow(blocks, wS, wE){
-  // Finns det >=36 h sammanhängande ledigt HELT inom 7-dagarsfönstret [wS,wE)?
-  // (Glidande fönster = striktaste, oomtvistliga tolkningen av "varje period om sju dagar".)
-  const bs=blocks.filter(b=>b[1]>wS && b[0]<wE)
-                 .map(b=>[Math.max(b[0],wS),Math.min(b[1],wE)])
-                 .sort((a,b)=>a[0]-b[0]);
-  let prev=wS;
-  for(const b of bs){ if(b[0]-prev >= 36*60) return true; prev=Math.max(prev,b[1]); }
-  return (wE-prev) >= 36*60;
+function freeRests(blocks){
+  // Ledighetsluckor = komplementet till arbetsblocken över hela cykeln [0, TOTMIN].
+  // Returnerar de luckor som är >=36 h sammanhängande, med CYKLISK hopslagning av
+  // slutet+början (vila som löper runt cykelns gräns räknas som en enda vila).
+  const gaps=[]; let prev=0;
+  for(const b of blocks){ if(b[0]>prev) gaps.push([prev,b[0]]); prev=Math.max(prev,b[1]); }
+  if(prev<TOTMIN) gaps.push([prev,TOTMIN]);
+  const head = gaps.length && gaps[0][0]===0 ? gaps[0] : null;
+  const tail = gaps.length && gaps[gaps.length-1][1]===TOTMIN ? gaps[gaps.length-1] : null;
+  let rests = gaps.filter(g=>g[1]-g[0] >= 36*60);
+  if(head && tail && head!==tail && (tail[1]-tail[0])+(head[1]-head[0]) >= 36*60){
+    rests = rests.filter(g=>g!==head && g!==tail);
+    rests.push([tail[0]-TOTMIN, head[1]]);  // vila som löper runt cykelns slut → början
+  }
+  rests.sort((a,b)=>a[0]-b[0]);
+  return rests;
 }
 function fmtSpan(b){ return `${dlabel(Math.floor(b[0]/1440))} ${pad(Math.floor((b[0]%1440)/60))}:${pad(b[0]%60)} → ${dlabel(Math.floor((b[1]-1)/1440))} ${pad(Math.floor((b[1]%1440)/60))}:${pad(b[1]%60)}`; }
 function pad(n){ return String(n).padStart(2,"0"); }
