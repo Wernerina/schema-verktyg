@@ -123,16 +123,18 @@ const DEFAULT = {
     {code:"D",  name:"Dag / dubbel 07:30–16:00", start:"07:30", end:"16:00", color:"#e6f6ea"},
     {code:"DD", name:"Dag lång",                  start:"07:30", end:"22:00", color:"#fdf0e1"},
     {code:"SEM", name:"Semester",     start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
-    {code:"TJL", name:"Tjänstledig",  start:"00:00", end:"00:00", color:"#e4d8f5", leave:true}
+    {code:"TJL", name:"Tjänstledig",  start:"00:00", end:"00:00", color:"#e4d8f5", leave:true},
+    {code:"SJK", name:"Sjukskriven",  start:"00:00", end:"00:00", color:"#ffd9d9", leave:true}
   ],
   // assignments[staffIndex][dayIndex] = shift code or "" (42 dagar = 6 veckor må–sö)
   cells: {},
   startDate: ""   // valfritt: måndag i vecka 1 (ÅÅÅÅ-MM-DD) → visar riktiga datum
 };
-// Specialkoder som INTE är arbete (semester/tjänstledig) — räknas som ledigt, kräver ingen täckning.
+// Specialkoder som INTE är arbete (semester/tjänstledig/sjukskriven) — räknas som ledigt, kräver ingen täckning.
 const LEAVE_SHIFTS = [
   {code:"SEM", name:"Semester",    start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
-  {code:"TJL", name:"Tjänstledig", start:"00:00", end:"00:00", color:"#e4d8f5", leave:true}
+  {code:"TJL", name:"Tjänstledig", start:"00:00", end:"00:00", color:"#e4d8f5", leave:true},
+  {code:"SJK", name:"Sjukskriven", start:"00:00", end:"00:00", color:"#ffd9d9", leave:true}
 ];
 const DAYS = ["Må","Ti","On","To","Fr","Lö","Sö"];
 const NDAYS = 42;
