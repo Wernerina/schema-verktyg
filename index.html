@@ -377,7 +377,7 @@ function updSeg(i,j,field,val){ const s=S.shifts[i]; const segs=ensureSegs(s); s
 function addSeg(i){ const s=S.shifts[i]; const segs=ensureSegs(s); const last=segs[segs.length-1]; segs.push({start:last?last.end:"17:00", end:last?"20:00":"20:00"}); render(); }
 function delSeg(i,j){ const s=S.shifts[i]; const segs=ensureSegs(s); if(segs.length>1){ segs.splice(j,1); s.start=segs[0].start; s.end=segs[0].end; } render(); }
 function updStaff(i,v){ S.staff[i]=v; render(); }
-function addShift(){ S.shifts.push({code:"N",name:"Nytt pass",start:"08:00",end:"16:00",color:"#eee",segments:[{start:"08:00",end:"16:00"}]}); render(); }
+function addShift(){ S.shifts.push({code:"N",name:"Nytt pass",start:"07:30",end:"16:00",color:"#eee",segments:[{start:"07:30",end:"16:00"}]}); render(); }
 function delShift(i){ S.shifts.splice(i,1); render(); }
 function addStaff(){ S.staff.push("Ny person"); render(); }
 function delStaff(i){ if(!confirm("Ta bort "+S.staff[i]+"?"))return; S.staff.splice(i,1); const nc={}; Object.keys(S.cells).forEach(k=>{k=+k; if(k<i)nc[k]=S.cells[k]; else if(k>i)nc[k-1]=S.cells[k];}); S.cells=nc; render(); }
