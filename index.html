@@ -145,18 +145,29 @@ let S = load() || JSON.parse(JSON.stringify(DEFAULT));
 // Migrering för redan sparade scheman: se till att semester/tjänstledig-koderna och startDate finns.
 LEAVE_SHIFTS.forEach(ls=>{ if(!S.shifts.some(s=>s.code===ls.code)) S.shifts.push(JSON.parse(JSON.stringify(ls))); });
 if(typeof S.startDate!=="string") S.startDate="";
+// Migrering: ge varje ARBETSpass en explicit segments-lista (delpass). Delade turer = flera delpass.
+S.shifts.forEach(s=>{ if(!s.leave && !Array.isArray(s.segments)) s.segments=[{start:s.start||"08:00", end:s.end||"16:00"}]; });
 
 // ---------- Helpers ----------
 function hm2min(s){ const [h,m]=s.split(":").map(Number); return h*60+(m||0); }
 function shiftByCode(c){ return S.shifts.find(x=>x.code===c); }
-// Returnerar arbetsintervall i absoluta minuter från dygn0 00:00 för ett pass på dag d.
-function intervalFor(code, d){
-  const sh = shiftByCode(code); if(!sh) return null;
-  if(sh.leave) return null;                            // semester/tjänstledig = ledigt, inget arbetsintervall
-  let st = hm2min(sh.start), en = hm2min(sh.end);
-  let dur = en - st; if(dur<=0) dur += 1440;          // över midnatt
-  const startAbs = d*1440 + st;
-  return [startAbs, startAbs+dur];
+// Delpass för ett pass: en vanlig tur = ETT delpass; en DELAD TUR = flera delpass.
+// Returnerar [{start,end},...]. Bakåtkompatibelt: saknas segments används start/end.
+function segmentsOf(sh){
+  if(!sh || sh.leave) return [];
+  if(Array.isArray(sh.segments) && sh.segments.length) return sh.segments;
+  return [{start:sh.start, end:sh.end}];
+}
+// Alla arbetsintervall (absoluta minuter från dygn0 00:00) för ett pass på dag d.
+// En DELAD TUR ger FLERA intervall. Returnerar en array (tom = ledigt/semester).
+function intervalsFor(code, d){
+  const sh = shiftByCode(code); if(!sh || sh.leave) return [];
+  return segmentsOf(sh).map(seg=>{
+    let st = hm2min(seg.start), en = hm2min(seg.end);
+    let dur = en - st; if(dur<=0) dur += 1440;         // delpass över midnatt
+    const startAbs = d*1440 + st;
+    return [startAbs, startAbs+dur];
+  });
 }
 function cell(si,di){ return (S.cells[si]&&S.cells[si][di])||""; }
 function setCell(si,di,v){ if(!S.cells[si])S.cells[si]={}; S.cells[si][di]=v; }
@@ -180,7 +191,7 @@ function analyse(){
   // Per person: arbetsblock + vila
   S.staff.forEach((name,si)=>{
     const ivs=[];
-    for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv) ivs.push(iv.concat([d])); } }
+    for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ intervalsFor(c,d).forEach(iv=> ivs.push(iv.concat([d]))); } }
     if(!ivs.length) return;
     const blocks = mergeBlocks(ivs.map(x=>[x[0],x[1]]));
     // Regel: max 24h sammanhängande
@@ -189,7 +200,7 @@ function analyse(){
       if(len>24+1e-6){
         issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h) — ${fmtSpan(b)}`});
         // markera dagarna i blocket
-        for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv && iv[0]>=b[0]-1 && iv[0]<b[1]) violCells[si+"-"+d]=true; } }
+        for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ intervalsFor(c,d).forEach(iv=>{ if(iv[0]>=b[0]-1 && iv[0]<b[1]) violCells[si+"-"+d]=true; }); } }
       }
     });
     // Regel: veckovila — minst 36 h sammanhängande ledigt minst en gång per 7-dagarsperiod.
@@ -218,14 +229,13 @@ function analyse(){
   for(let d=0; d<NDAYS; d++){
     const cov=new Array(48).fill(0); // 30-min luckor 00:00–24:00 för detta dygn
     S.staff.forEach((name,si)=>{
-      const c=cell(si,d); if(!c) return; const iv=intervalFor(c,d); if(!iv) return;
-      mark(cov, iv, d*1440);
+      const c=cell(si,d); if(!c) return; intervalsFor(c,d).forEach(iv=> mark(cov, iv, d*1440));
       // pass kan sträcka sig in i nästa dygn — täck även början av nästa dag
     });
     // även pass från föregående dag som går in i detta dygn
     // föregående dygns pass som går in i detta dygn — CYKLISKT (dag 0 får spill från sista dagen,
     // eftersom schemat upprepas). Rättar falsklarmet "täckning saknas mån v1 00:00". 2026-06-07.
-    { const pd=(d-1+NDAYS)%NDAYS; S.staff.forEach((name,si)=>{ const c=cell(si,pd); if(!c) return; let iv=intervalFor(c,pd); if(!iv) return; if(pd>d){ iv=[iv[0]-TOTMIN, iv[1]-TOTMIN]; } mark(cov, iv, d*1440); }); }
+    { const pd=(d-1+NDAYS)%NDAYS; S.staff.forEach((name,si)=>{ const c=cell(si,pd); if(!c) return; intervalsFor(c,pd).forEach(iv0=>{ let iv=iv0; if(pd>d){ iv=[iv0[0]-TOTMIN, iv0[1]-TOTMIN]; } mark(cov, iv, d*1440); }); }); }
     // hål i dygnet-runt?
     let gap=cov.some((x,i)=>x<1);
     if(gap) issues.push({bad:true,t:`Dag ${dlabel(d)}: täckning saknas dygnet runt (minst 1 person varje timme).`});
@@ -278,20 +288,28 @@ function render(){
 }
 function renderLegend(){
   const el=document.getElementById("legend");
-  el.innerHTML = S.shifts.map(s=>`<span><span class="swatch" style="background:${s.color}">${s.code}</span>${s.name} <span class="hours">(${s.leave?'ledig':s.start+'–'+s.end})</span></span>`).join("")
+  el.innerHTML = S.shifts.map(s=>`<span><span class="swatch" style="background:${s.color}">${s.code}</span>${s.name} <span class="hours">(${s.leave?'ledig':segmentsOf(s).map(seg=>seg.start+'–'+seg.end).join(', ')})</span></span>`).join("")
     + `<span><span class="swatch">·</span>ledig</span>`;
 }
 function renderShifts(){
   const el=document.getElementById("shiftEditor");
-  el.innerHTML = S.shifts.map((s,i)=>`
-    <div class="shiftrow">
+  el.innerHTML = S.shifts.map((s,i)=>{
+    const segs = segmentsOf(s);
+    const segUI = s.leave
+      ? '<span class="hours">ledigt (ingen arbetstid)</span>'
+      : segs.map((seg,j)=>`<label class="small">${j===0?'tid':'delpass '+(j+1)} `
+          +`<input type="time" value="${seg.start}" onchange="updSeg(${i},${j},'start',this.value)">`
+          +`–<input type="time" value="${seg.end}" onchange="updSeg(${i},${j},'end',this.value)">`
+          +`${segs.length>1?` <button class="small" onclick="delSeg(${i},${j})" title="ta bort delpass">–</button>`:''}</label>`).join(' ')
+        + ` <button class="small" onclick="addSeg(${i})" title="Dela upp passet i flera delpass (delad tur)">+ delpass</button>`;
+    return `<div class="shiftrow">
       <input style="width:46px" value="${s.code}" onchange="upd('shift',${i},'code',this.value)">
-      <input style="width:200px" value="${s.name}" onchange="upd('shift',${i},'name',this.value)">
-      <label class="small">start <input type="time" value="${s.start}" onchange="upd('shift',${i},'start',this.value)"></label>
-      <label class="small">slut <input type="time" value="${s.end}" onchange="upd('shift',${i},'end',this.value)"></label>
+      <input style="width:180px" value="${s.name}" onchange="upd('shift',${i},'name',this.value)">
+      ${segUI}
       <input type="color" value="${s.color}" onchange="upd('shift',${i},'color',this.value)">
       <button class="small" onclick="delShift(${i})">ta bort</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 function renderStaff(){
   const el=document.getElementById("staffEditor");
@@ -320,7 +338,7 @@ function renderGrid(violCells){
 }
 function weekHoursData(si){
   const wk=[0,0,0,0,0,0];
-  for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(c){ const iv=intervalFor(c,d); if(iv) wk[Math.floor(d/7)]+=(iv[1]-iv[0])/60; } }
+  for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(c){ intervalsFor(c,d).forEach(iv=> wk[Math.floor(d/7)]+=(iv[1]-iv[0])/60); } }
   return {wk, tot:wk.reduce((a,b)=>a+b,0)};
 }
 // Veckotimmar i en egen lista (flyttad ut ur namnkolumnen så att schemat blir smalare
@@ -353,8 +371,13 @@ function cycle(si,di){
   setCell(si,di,codes[i]); render();
 }
 function upd(kind,i,field,val){ if(kind==='shift'){ S.shifts[i][field]=val; } render(); }
+// ---- Delpass (delade turer) ----
+function ensureSegs(s){ if(!Array.isArray(s.segments)||!s.segments.length) s.segments=segmentsOf(s).map(x=>({...x})); return s.segments; }
+function updSeg(i,j,field,val){ const s=S.shifts[i]; const segs=ensureSegs(s); segs[j][field]=val; if(j===0){ s.start=segs[0].start; s.end=segs[0].end; } render(); }
+function addSeg(i){ const s=S.shifts[i]; const segs=ensureSegs(s); const last=segs[segs.length-1]; segs.push({start:last?last.end:"17:00", end:last?"20:00":"20:00"}); render(); }
+function delSeg(i,j){ const s=S.shifts[i]; const segs=ensureSegs(s); if(segs.length>1){ segs.splice(j,1); s.start=segs[0].start; s.end=segs[0].end; } render(); }
 function updStaff(i,v){ S.staff[i]=v; render(); }
-function addShift(){ S.shifts.push({code:"N",name:"Nytt pass",start:"08:00",end:"16:00",color:"#eee"}); render(); }
+function addShift(){ S.shifts.push({code:"N",name:"Nytt pass",start:"08:00",end:"16:00",color:"#eee",segments:[{start:"08:00",end:"16:00"}]}); render(); }
 function delShift(i){ S.shifts.splice(i,1); render(); }
 function addStaff(){ S.staff.push("Ny person"); render(); }
 function delStaff(i){ if(!confirm("Ta bort "+S.staff[i]+"?"))return; S.staff.splice(i,1); const nc={}; Object.keys(S.cells).forEach(k=>{k=+k; if(k<i)nc[k]=S.cells[k]; else if(k>i)nc[k-1]=S.cells[k];}); S.cells=nc; render(); }
