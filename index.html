@@ -122,10 +122,11 @@ const DEFAULT = {
     {code:"X",  name:"Dygnspass (dygnet runt)", start:"07:30", end:"07:30", color:"#dceefc"},
     {code:"D",  name:"Dag / dubbel 07:30–16:00", start:"07:30", end:"16:00", color:"#e6f6ea"},
     {code:"DD", name:"Dag lång",                  start:"07:30", end:"22:00", color:"#fdf0e1"},
-    {code:"SEM", name:"Semester",     start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
+    {code:"SEM", name:"Semester",     start:"00:00", end:"00:00", color:"#fff3c4", leave:true, worktime:510},
     {code:"TJL", name:"Tjänstledig",  start:"00:00", end:"00:00", color:"#e4d8f5", leave:true},
-    {code:"SJK", name:"Sjukskriven",  start:"00:00", end:"00:00", color:"#ffd9d9", leave:true},
-    {code:"VAB", name:"Vård av barn", start:"00:00", end:"00:00", color:"#d9ecff", leave:true}
+    {code:"SJK", name:"Sjukskriven",  start:"00:00", end:"00:00", color:"#ffd9d9", leave:true, worktime:510},
+    {code:"VAB", name:"Vård av barn", start:"00:00", end:"00:00", color:"#d9ecff", leave:true, worktime:510},
+    {code:"FP",  name:"Föräldrapenning", start:"00:00", end:"00:00", color:"#ffe4c4", leave:true, worktime:510}
   ],
   // assignments[staffIndex][dayIndex] = shift code or "" (42 dagar = 6 veckor må–sö)
   cells: {},
@@ -133,10 +134,11 @@ const DEFAULT = {
 };
 // Specialkoder som INTE är arbete (semester/tjänstledig/sjukskriven) — räknas som ledigt, kräver ingen täckning.
 const LEAVE_SHIFTS = [
-  {code:"SEM", name:"Semester",    start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
+  {code:"SEM", name:"Semester",    start:"00:00", end:"00:00", color:"#fff3c4", leave:true, worktime:510},
   {code:"TJL", name:"Tjänstledig", start:"00:00", end:"00:00", color:"#e4d8f5", leave:true},
-  {code:"SJK", name:"Sjukskriven", start:"00:00", end:"00:00", color:"#ffd9d9", leave:true},
-  {code:"VAB", name:"Vård av barn", start:"00:00", end:"00:00", color:"#d9ecff", leave:true}
+  {code:"SJK", name:"Sjukskriven", start:"00:00", end:"00:00", color:"#ffd9d9", leave:true, worktime:510},
+  {code:"VAB", name:"Vård av barn", start:"00:00", end:"00:00", color:"#d9ecff", leave:true, worktime:510},
+  {code:"FP",  name:"Föräldrapenning", start:"00:00", end:"00:00", color:"#ffe4c4", leave:true, worktime:510}
 ];
 const DAYS = ["Må","Ti","On","To","Fr","Lö","Sö"];
 const NDAYS = 42;
@@ -146,6 +148,8 @@ const LS_KEY = "kricko_schema_v1";
 let S = load() || JSON.parse(JSON.stringify(DEFAULT));
 // Migrering för redan sparade scheman: se till att semester/tjänstledig-koderna och startDate finns.
 LEAVE_SHIFTS.forEach(ls=>{ if(!S.shifts.some(s=>s.code===ls.code)) S.shifts.push(JSON.parse(JSON.stringify(ls))); });
+// Back-fill: ge redan sparade ledig-koder sin worktime (så semester/sjuk/VAB/FP räknas i totalen).
+LEAVE_SHIFTS.forEach(ls=>{ const s=S.shifts.find(x=>x.code===ls.code); if(s && ls.worktime!=null && s.worktime==null) s.worktime=ls.worktime; });
 if(typeof S.startDate!=="string") S.startDate="";
 // Migrering: ge varje ARBETSpass en explicit segments-lista (delpass). Delade turer = flera delpass.
 S.shifts.forEach(s=>{ if(!s.leave && !Array.isArray(s.segments)) s.segments=[{start:s.start||"08:00", end:s.end||"16:00"}]; });
@@ -340,7 +344,18 @@ function renderGrid(violCells){
 }
 function weekHoursData(si){
   const wk=[0,0,0,0,0,0];
-  for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(c){ intervalsFor(c,d).forEach(iv=> wk[Math.floor(d/7)]+=(iv[1]-iv[0])/60); } }
+  for(let d=0;d<NDAYS;d++){
+    const c=cell(si,d); if(!c) continue;
+    const sh=shiftByCode(c);
+    if(sh && sh.leave){
+      // Ledig-koder (semester/sjuk/VAB/föräldrapenning) räknas som AKTIV tid i den sammanlagda
+      // arbetstiden (Arbetstidslagen: aktiv tid, ej jour), men kräver ingen bemanning.
+      // Standard = normal dag 07:30–16:00 = 510 min. TJL saknar worktime => räknas som 0.
+      if(typeof sh.worktime==='number') wk[Math.floor(d/7)] += sh.worktime/60;
+    } else {
+      intervalsFor(c,d).forEach(iv=> wk[Math.floor(d/7)] += (iv[1]-iv[0])/60);
+    }
+  }
   return {wk, tot:wk.reduce((a,b)=>a+b,0)};
 }
 // Veckotimmar i en egen lista (flyttad ut ur namnkolumnen så att schemat blir smalare
