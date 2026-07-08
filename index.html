@@ -124,7 +124,8 @@ const DEFAULT = {
     {code:"DD", name:"Dag lång",                  start:"07:30", end:"22:00", color:"#fdf0e1"},
     {code:"SEM", name:"Semester",     start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
     {code:"TJL", name:"Tjänstledig",  start:"00:00", end:"00:00", color:"#e4d8f5", leave:true},
-    {code:"SJK", name:"Sjukskriven",  start:"00:00", end:"00:00", color:"#ffd9d9", leave:true}
+    {code:"SJK", name:"Sjukskriven",  start:"00:00", end:"00:00", color:"#ffd9d9", leave:true},
+    {code:"VAB", name:"Vård av barn", start:"00:00", end:"00:00", color:"#d9ecff", leave:true}
   ],
   // assignments[staffIndex][dayIndex] = shift code or "" (42 dagar = 6 veckor må–sö)
   cells: {},
@@ -134,7 +135,8 @@ const DEFAULT = {
 const LEAVE_SHIFTS = [
   {code:"SEM", name:"Semester",    start:"00:00", end:"00:00", color:"#fff3c4", leave:true},
   {code:"TJL", name:"Tjänstledig", start:"00:00", end:"00:00", color:"#e4d8f5", leave:true},
-  {code:"SJK", name:"Sjukskriven", start:"00:00", end:"00:00", color:"#ffd9d9", leave:true}
+  {code:"SJK", name:"Sjukskriven", start:"00:00", end:"00:00", color:"#ffd9d9", leave:true},
+  {code:"VAB", name:"Vård av barn", start:"00:00", end:"00:00", color:"#d9ecff", leave:true}
 ];
 const DAYS = ["Må","Ti","On","To","Fr","Lö","Sö"];
 const NDAYS = 42;
