@@ -89,6 +89,15 @@
   <div class="panel" style="overflow-x:auto">
     <h2>Schema — 6 veckor (klicka i en ruta för att sätta/ändra pass)</h2>
     <div class="muted small no-print" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span> &nbsp; <button class="small" onclick="window.print()">🖨️ Skriv ut alla veckor</button></div>
+    <div id="leavebar" class="no-print" style="margin-bottom:8px">
+      <span class="muted small">Läge:</span>
+      <button class="small primary" data-mode="" onclick="setLeaveMode('')">✏️ Bygg schema</button>
+      <button class="small" data-mode="SJK" onclick="setLeaveMode('SJK')">🤒 Sjuk</button>
+      <button class="small" data-mode="VAB" onclick="setLeaveMode('VAB')">👶 VAB</button>
+      <button class="small" data-mode="SEM" onclick="setLeaveMode('SEM')">🌴 Semester</button>
+      <button class="small" data-mode="FP" onclick="setLeaveMode('FP')">🍼 Föräldrapenning</button>
+      <span class="muted small" id="leaveModeLabel">— klicka i rutor för att bygga schemat</span>
+    </div>
     <div id="grid"></div>
   </div>
 
@@ -119,7 +128,7 @@ const DEFAULT = {
   staff: ["Linus","Sanne","Åsa","Kricko","Lena","Jossan"],
   // start/slut i HH:MM. Pass som går över midnatt hanteras automatiskt (slut <= start = nästa dag).
   shifts: [
-    {code:"X",  name:"Dygnspass (dygnet runt)", start:"07:30", end:"07:30", color:"#dceefc"},
+    {code:"X",  name:"Dygnspass (dygnet runt)", start:"07:30", end:"07:30", color:"#dceefc", jour:320},
     {code:"D",  name:"Dag / dubbel 07:30–16:00", start:"07:30", end:"16:00", color:"#e6f6ea"},
     {code:"DD", name:"Dag lång",                  start:"07:30", end:"22:00", color:"#fdf0e1"},
     {code:"SEM", name:"Semester",     start:"00:00", end:"00:00", color:"#fff3c4", leave:true, worktime:510},
@@ -150,6 +159,8 @@ let S = load() || JSON.parse(JSON.stringify(DEFAULT));
 LEAVE_SHIFTS.forEach(ls=>{ if(!S.shifts.some(s=>s.code===ls.code)) S.shifts.push(JSON.parse(JSON.stringify(ls))); });
 // Back-fill: ge redan sparade ledig-koder sin worktime (så semester/sjuk/VAB/FP räknas i totalen).
 LEAVE_SHIFTS.forEach(ls=>{ const s=S.shifts.find(x=>x.code===ls.code); if(s && ls.worktime!=null && s.worktime==null) s.worktime=ls.worktime; });
+// Back-fill: dygnspasset (X) får sin jourtid (00:00–05:20 = 320 min) så aktiv tid räknas rätt.
+{ const _x=S.shifts.find(s=>s.code==='X'); if(_x && _x.jour==null) _x.jour=320; }
 if(typeof S.startDate!=="string") S.startDate="";
 // Migrering: ge varje ARBETSpass en explicit segments-lista (delpass). Delade turer = flera delpass.
 S.shifts.forEach(s=>{ if(!s.leave && !Array.isArray(s.segments)) s.segments=[{start:s.start||"08:00", end:s.end||"16:00"}]; });
@@ -157,6 +168,12 @@ S.shifts.forEach(s=>{ if(!s.leave && !Array.isArray(s.segments)) s.segments=[{st
 // ---------- Helpers ----------
 function hm2min(s){ const [h,m]=s.split(":").map(Number); return h*60+(m||0); }
 function shiftByCode(c){ return S.shifts.find(x=>x.code===c); }
+// v2 (Kricko-modellen, Hearth 2026-07-08): ledig kan ligga PÅ ett schemalagt pass ("X>SJK") och ärver då
+// passets AKTIVA tid (passets längd minus jour). En cell: "" | arbetskod "X" | ledig-kod "SJK" | "X>SJK".
+let leaveMode='';
+function shiftDurationMin(sh){ if(!sh) return 0; return segmentsOf(sh).reduce((a,seg)=>{ let d=hm2min(seg.end)-hm2min(seg.start); if(d<=0) d+=1440; return a+d; },0); }
+function activeMinutesOf(sh){ return Math.max(0, shiftDurationMin(sh) - (sh&&sh.jour?sh.jour:0)); }
+function parseCell(c){ if(!c) return {base:'',leave:''}; if(c.indexOf('>')>=0){ const p=c.split('>'); return {base:p[0],leave:p[1]}; } const sh=shiftByCode(c); if(sh&&sh.leave) return {base:'',leave:c}; return {base:c,leave:''}; }
 // Delpass för ett pass: en vanlig tur = ETT delpass; en DELAD TUR = flera delpass.
 // Returnerar [{start,end},...]. Bakåtkompatibelt: saknas segments används start/end.
 function segmentsOf(sh){
@@ -332,10 +349,14 @@ function renderGrid(violCells){
   S.staff.forEach((name,si)=>{
     h+=`<tr><td class="namecell">${name}</td>`;
     for(let d=0;d<NDAYS;d++){
-      const c=cell(si,d); const sh=shiftByCode(c);
-      const bg = violCells[si+"-"+d] ? '' : (sh?`style="background:${sh.color}"`:'');
+      const c=cell(si,d); const p=parseCell(c);
+      const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=p.base?shiftByCode(p.base):null;
+      const dispSh=leaveSh||baseSh;
+      const label=(p.base&&p.leave)?(p.base+'→'+p.leave):(c||'·');
+      const title=leaveSh?(leaveSh.name+(baseSh?(' (schemalagt: '+baseSh.name+')'):'')):(baseSh?baseSh.name:'ledig');
+      const bg = violCells[si+"-"+d] ? '' : (dispSh?`style="background:${dispSh.color}"`:'');
       const cls = 'daycell '+(violCells[si+"-"+d]?'viol ':'')+(d%7===6?'sun':d%7===5?'sat':'');
-      h+=`<td class="${cls}" ${bg} onclick="cycle(${si},${d})" title="${sh?sh.name:'ledig'}">${c||'·'}</td>`;
+      h+=`<td class="${cls}" ${bg} onclick="onCell(${si},${d})" title="${title}">${label}</td>`;
     }
     h+='</tr>';
   });
@@ -346,14 +367,17 @@ function weekHoursData(si){
   const wk=[0,0,0,0,0,0];
   for(let d=0;d<NDAYS;d++){
     const c=cell(si,d); if(!c) continue;
-    const sh=shiftByCode(c);
-    if(sh && sh.leave){
-      // Ledig-koder (semester/sjuk/VAB/föräldrapenning) räknas som AKTIV tid i den sammanlagda
-      // arbetstiden (Arbetstidslagen: aktiv tid, ej jour), men kräver ingen bemanning.
-      // Standard = normal dag 07:30–16:00 = 510 min. TJL saknar worktime => räknas som 0.
-      if(typeof sh.worktime==='number') wk[Math.floor(d/7)] += sh.worktime/60;
+    const {base,leave}=parseCell(c); const w=Math.floor(d/7);
+    if(leave){
+      // Ledig räknas som AKTIV tid i sammanlagd arbetstid (ej jour). Ligger den PÅ ett schemalagt pass
+      // ärvs passets aktiva tid (längd minus jour); en ren ledig-kod använder sin standard-worktime.
+      // TJL saknar worktime => räknas som 0. Ledigt kräver ingen bemanning.
+      const lv=shiftByCode(leave);
+      if(lv && typeof lv.worktime==='number'){
+        wk[w] += (base ? activeMinutesOf(shiftByCode(base)) : lv.worktime)/60;
+      }
     } else {
-      intervalsFor(c,d).forEach(iv=> wk[Math.floor(d/7)] += (iv[1]-iv[0])/60);
+      intervalsFor(base,d).forEach(iv=> wk[w] += (iv[1]-iv[0])/60);
     }
   }
   return {wk, tot:wk.reduce((a,b)=>a+b,0)};
@@ -383,9 +407,20 @@ function renderIssues(issues){
 
 // ---------- Interactions ----------
 function cycle(si,di){
-  const codes=["",...S.shifts.map(s=>s.code)];
-  const cur=cell(si,di); let i=codes.indexOf(cur); i=(i+1)%codes.length;
+  const codes=["",...S.shifts.filter(s=>!s.leave).map(s=>s.code)];  // v2: cykla bara ARBETSpass; ledigt sätts via läget
+  const cur=parseCell(cell(si,di)).base; let i=codes.indexOf(cur); i=(i+1)%codes.length;
   setCell(si,di,codes[i]); render();
+}
+function onCell(si,di){ if(leaveMode) overlayLeave(si,di,leaveMode); else cycle(si,di); }
+function overlayLeave(si,di,lv){ const p=parseCell(cell(si,di));
+  if(p.leave===lv){ setCell(si,di, p.base||''); }        // toggla av → tillbaka till passet (eller tomt)
+  else if(p.base){ setCell(si,di, p.base+'>'+lv); }      // ledig PÅ det schemalagda passet (ärver aktiv tid)
+  else { setCell(si,di, lv); }                           // ledig på en tom dag → standardtimmar
+  render();
+}
+function setLeaveMode(m){ leaveMode=m; const el=document.getElementById('leaveModeLabel');
+  if(el){ const sh=m?shiftByCode(m):null; el.textContent = m ? ('— klicka på ett pass för att markera '+(sh?sh.name:m)+' (klicka igen för att ta bort)') : '— klicka i rutor för att bygga schemat'; }
+  document.querySelectorAll('#leavebar button').forEach(b=> b.classList.toggle('primary', b.dataset.mode===m));
 }
 function upd(kind,i,field,val){ if(kind==='shift'){ S.shifts[i][field]=val; } render(); }
 // ---- Delpass (delade turer) ----
