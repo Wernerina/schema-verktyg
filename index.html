@@ -31,6 +31,11 @@
   .viol{background:var(--badbg)!important;color:var(--bad)}
   .warnrow{background:#fff6d6}
   .cellwarn{background:#fff6d6}
+  .locked{opacity:.72}
+  .devcell{box-shadow:inset 0 0 0 2px #2b6cb0}
+  .mgrid td.daycell{width:26px;height:26px;font-size:11px}
+  .mgrid th{font-size:10px;padding:2px}
+  .lockbadge{font-size:11px;color:#2b6cb0;font-weight:600}
   .monthgrp{margin:4px 0;border:1px solid var(--line);border-radius:7px;padding:4px 8px;background:#fbfcfe}
   .monthgrp summary{padding:2px 0;font-weight:600}
   h3.halfhdr{margin:12px 0 4px;font-size:13px;color:var(--head)}
@@ -179,6 +184,12 @@ if(typeof S.startDate!=="string") S.startDate="";
 // Månadsgräns räknas automatiskt utifrån antal dagar: 28→192, 29→199, 30→206, 31→213 tim.
 if(!Array.isArray(S.halfLimits) || S.halfLimits.length!==2) S.halfLimits=[1243,1264];
 if(typeof S.calYear!=="number"){ const _sd=S.startDate?new Date(S.startDate+'T00:00:00'):null; S.calYear=(_sd&&!isNaN(_sd))?_sd.getFullYear():new Date().getFullYear(); }
+// Redigerbara månader (Kricko 2026-07-09): varje riktig dag kan få en AVVIKELSE (S.dev, medveten ändring – vinner alltid),
+// och månader kan KLARMARKERAS (S.frozen fryser det som gällde då; S.lockedThrough = sista klarmarkerade datum).
+// Grundschema-ändringar slår bara igenom på datum EFTER lockedThrough (= "från det datum jag anger").
+if(!S.dev || typeof S.dev!=="object") S.dev={};
+if(!S.frozen || typeof S.frozen!=="object") S.frozen={};
+if(typeof S.lockedThrough!=="string") S.lockedThrough="";
 // Migrering: ge varje ARBETSpass en explicit segments-lista (delpass). Delade turer = flera delpass.
 S.shifts.forEach(s=>{ if(!s.leave && !Array.isArray(s.segments)) s.segments=[{start:s.start||"08:00", end:s.end||"16:00"}]; });
 
@@ -403,20 +414,61 @@ const MONTHS_SV=["Januari","Februari","Mars","April","Maj","Juni","Juli","August
 // Vilken dag i 6-veckorscykeln (0..41) ett riktigt datum motsvarar (–1 = före startdatum / inget startdatum).
 function cycleDayForDate(dt){
   if(!S.startDate) return -1;
-  const start=new Date(S.startDate+'T00:00:00'); if(isNaN(start)) return -1;
-  const diff=Math.floor((dt.getTime()-start.getTime())/86400000);
+  const sp=S.startDate.split('-').map(Number); if(sp.length!==3 || sp.some(isNaN)) return -1;
+  // Räkna hela kalenderdygn via UTC → DST-säkert (annars blir det fel med 1 dag efter sommartid­sväxlingen).
+  const startUTC=Date.UTC(sp[0],sp[1]-1,sp[2]);
+  const dUTC=Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate());
+  const diff=Math.round((dUTC-startUTC)/86400000);
   if(diff<0) return -1;
   return ((diff%NDAYS)+NDAYS)%NDAYS;
 }
-// Summa arbetstimmar för person si under en kalendermånad (year, month 0..11).
+// ---- Redigerbara månader: avvikelser (dev), frysning (frozen) och effektivt värde per riktig dag ----
+function isoDate(dt){ return dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate()); }
+function devGet(iso,si){ return (S.dev[iso]&&S.dev[iso][si]!=null)?S.dev[iso][si]:null; }
+function devSet(iso,si,v){ if(!S.dev[iso])S.dev[iso]={}; if(v==='' ) delete S.dev[iso][si]; else S.dev[iso][si]=v; if(S.dev[iso]&&!Object.keys(S.dev[iso]).length) delete S.dev[iso]; }
+function frozenGet(iso,si){ return (S.frozen[iso]&&S.frozen[iso][si]!=null)?S.frozen[iso][si]:null; }
+function isLocked(iso){ return !!S.lockedThrough && iso<=S.lockedThrough; }
+function projectBase(dt,si){ const cd=cycleDayForDate(dt); return cd>=0?cell(si,cd):''; }
+// Prioritet: medveten avvikelse vinner ALLTID > fryst värde i klarmarkerad period > projicerat grundschema.
+function effectiveCell(dt,si){
+  const iso=isoDate(dt);
+  const d=devGet(iso,si); if(d!==null) return d;
+  if(isLocked(iso)){ const f=frozenGet(iso,si); if(f!==null) return f; }
+  return projectBase(dt,si);
+}
+// Summa arbetstimmar för person si under en kalendermånad (0..11) — utifrån EFFEKTIVT värde per dag.
 function monthHours(si,year,month){
   let tot=0; const d=new Date(year,month,1);
-  while(d.getFullYear()===year && d.getMonth()===month){
-    const cd=cycleDayForDate(d);
-    if(cd>=0) tot += cellWorkHours(cell(si,cd));
-    d.setDate(d.getDate()+1);
-  }
+  while(d.getFullYear()===year && d.getMonth()===month){ tot += cellWorkHours(effectiveCell(d,si)); d.setDate(d.getDate()+1); }
   return tot;
+}
+// Klarmarkera t.o.m. ett datum: frys det som gäller nu (grundschema+avvikelser) för varje dag från start t.o.m. datumet.
+function finalizeThrough(iso){
+  if(!iso || !S.startDate) return;
+  const start=new Date(S.startDate+'T00:00:00'); if(isNaN(start)) return;
+  const end=new Date(iso+'T00:00:00'); if(isNaN(end)) return;
+  for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+    const k=isoDate(d); if(!S.frozen[k]) S.frozen[k]={};
+    S.staff.forEach((n,si)=>{ if(S.frozen[k][si]==null){ const v=effectiveCell(d,si); if(v) S.frozen[k][si]=v; } });
+  }
+  if(!S.lockedThrough || iso>S.lockedThrough) S.lockedThrough=iso;
+  render();
+}
+// "Grundschema-ändringar gäller from [datum]" → klarmarkera t.o.m. dagen INNAN (så nya basändringar syns from datumet;
+// redan gjorda avvikelser ligger kvar eftersom de vinner över allt).
+function applyBaseFrom(iso){ if(!iso){ return; } const d=new Date(iso+'T00:00:00'); if(isNaN(d)) return; d.setDate(d.getDate()-1); S.lockedThrough=isoDate(d); render(); }
+function clearLock(){ S.lockedThrough=''; render(); }
+// Klick i en månadsruta: bygg-läge cyklar arbetspass som avvikelse; markera-läge lägger sjuk/VAB/… som avvikelse.
+function onMonthCell(iso,si){
+  const dt=new Date(iso+'T00:00:00'); const cur=effectiveCell(dt,si); const p=parseCell(cur);
+  if(leaveMode){
+    let v; if(p.leave===leaveMode) v=p.base||''; else if(p.base) v=p.base+'>'+leaveMode; else v=leaveMode;
+    devSet(iso,si,v);
+  } else {
+    const codes=['',...S.shifts.filter(s=>!s.leave).map(s=>s.code)];
+    let i=codes.indexOf(p.base); i=(i+1)%codes.length; devSet(iso,si,codes[i]);
+  }
+  render();
 }
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
 // Sammanlagd arbetstid per månad, gräns efter antal dagar: 28→192, 29→199, 30→206, 31→213 tim (Kricko).
@@ -425,6 +477,29 @@ function setHalfLimit(i,v){ const n=parseFloat(v); if(!isNaN(n)) S.halfLimits[i]
 function setCalYear(v){ const n=parseInt(v,10); if(!isNaN(n)) S.calYear=n; render(); }
 // Klass för en timsiffra mot en gräns: röd över, gul från 90 %.
 function limClass(val,max,over,near){ if(val>=max) return over; if(val>=0.9*max) return near; return ''; }
+// Redigerbar månadsgrid (personal × riktiga dagar) — klick sätter avvikelse; klarmarkerade dagar visas låsta.
+function monthGridHtml(year,m){
+  const days=daysInMonth(year,m);
+  let h='<div class="mgrid" style="overflow-x:auto"><table><thead><tr><th class="namecell">Personal</th>';
+  for(let day=1;day<=days;day++){ const dt=new Date(year,m,day); const wi=(dt.getDay()+6)%7; const iso=isoDate(dt);
+    h+=`<th class="${wi===6?'sun':wi===5?'sat':''}">${day}<br><span style="font-weight:400">${DAYS[wi]}</span>${isLocked(iso)?'<br><span class="lockbadge">🔒</span>':''}</th>`; }
+  h+='</tr></thead><tbody>';
+  S.staff.forEach((name,si)=>{
+    h+=`<tr><td class="namecell">${name}</td>`;
+    for(let day=1;day<=days;day++){ const dt=new Date(year,m,day); const iso=isoDate(dt); const code=effectiveCell(dt,si);
+      const p=parseCell(code); const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=p.base?shiftByCode(p.base):null; const dispSh=leaveSh||baseSh;
+      const label=(p.base&&p.leave)?(p.base+'→'+p.leave):(code||'·');
+      const isDev=devGet(iso,si)!==null, lk=isLocked(iso), wi=(dt.getDay()+6)%7;
+      const cls='daycell '+(isDev?'devcell ':'')+(lk?'locked ':'')+(wi===6?'sun':wi===5?'sat':'');
+      const bg=dispSh?`style="background:${dispSh.color}"`:'';
+      const title=(leaveSh?leaveSh.name:(baseSh?baseSh.name:'ledig'))+(isDev?' (avvikelse)':'')+(lk?' – klarmarkerad':'');
+      h+=`<td class="${cls}" ${bg} onclick="onMonthCell('${iso}',${si})" title="${title}">${label}</td>`;
+    }
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
 function renderMonthly(){
   const el=document.getElementById('monthly'); if(!el) return;
   const cfg=`<div class="muted small no-print" style="margin-bottom:8px">📆 År: <input type="number" style="width:74px" value="${S.calYear}" onchange="setCalYear(this.value)">
@@ -432,8 +507,13 @@ function renderMonthly(){
     &nbsp; jul–dec: <input type="number" style="width:74px" value="${S.halfLimits[1]}" onchange="setHalfLimit(1,this.value)">
     <br><span class="muted">Månadsgräns räknas automatiskt (192/199/206/213 tim efter antal dagar). Gul = från 90 %, röd = över gränsen.</span></div>`;
   if(!S.startDate){ el.innerHTML=cfg+'<p class="muted">Sätt <b>startdatum</b> i schemat ovan (måndag i vecka 1) så fylls månaderna i automatiskt från 6-veckorsschemat.</p>'; return; }
+  const lockLine=`<div class="muted small no-print" style="margin-bottom:8px;border-top:1px solid var(--line);padding-top:8px">
+    🔒 Klarmarkerat t.o.m.: <b>${S.lockedThrough||'– (inget ännu)'}</b>
+    &nbsp; Grundschema-ändringar gäller from: <input type="date" onchange="applyBaseFrom(this.value)">
+    ${S.lockedThrough?` &nbsp;<button class="small" onclick="clearLock()">Lås upp alla</button>`:''}
+    <br><span class="muted">Öppna en månad och <b>klicka i rutorna</b> för att ändra/markera avvikelser (bygg-läge byter pass, markera-läget ovanför sätter sjuk/VAB/semester/FP). <b>Klarmarkera</b> fryser månaden så att senare ändringar i grundschemat inte påverkar den — de slår bara igenom från datumet du anger. Medvetna avvikelser ligger alltid kvar.</span></div>`;
   const year=S.calYear;
-  let h=cfg;
+  let h=cfg+lockLine;
   [['Första halvåret',[0,1,2,3,4,5],0],['Andra halvåret',[6,7,8,9,10,11],1]].forEach(([title,months,hi])=>{
     const hlimit=S.halfLimits[hi];
     h+=`<h3 class="halfhdr">${title} ${year} <span class="muted" style="font-weight:400">(${MONTHS_SV[months[0]].toLowerCase()}–${MONTHS_SV[months[5]].toLowerCase()}, gräns ${hlimit} h)</span></h3>`;
@@ -450,13 +530,16 @@ function renderMonthly(){
     });
     h+='</tbody></table></div>';
     months.forEach(m=>{
-      const mm=monthMax(year,m);
+      const mm=monthMax(year,m); const meiso=isoDate(new Date(year,m,daysInMonth(year,m)));
       const perStaff=S.staff.map((name,si)=>({name,h:monthHours(si,year,m)}));
       const msum=perStaff.reduce((a,p)=>a+p.h,0);
-      h+=`<details class="monthgrp"><summary>${MONTHS_SV[m]} ${year} — Σ ${msum.toFixed(0)} h <span class="muted" style="font-weight:400">(månadsgräns ${mm} h/person)</span></summary>`
-        + `<div class="small" style="padding:4px 0 6px 10px">`
+      const monthLocked=isLocked(meiso);
+      h+=`<details class="monthgrp"><summary>${MONTHS_SV[m]} ${year} — Σ ${msum.toFixed(0)} h ${monthLocked?'<span class="lockbadge">🔒 klarmarkerad</span>':''} <span class="muted" style="font-weight:400">(månadsgräns ${mm} h/person)</span></summary>`
+        + `<div class="small" style="padding:4px 0 6px 4px">`
         + perStaff.map(p=>{ const flag=p.h>=mm?' ⛔':p.h>=0.9*mm?' ⚠️':''; return `${p.name}: <b>${p.h.toFixed(0)} h</b>${flag}`; }).join(' &nbsp;·&nbsp; ')
-        + `</div></details>`;
+        + ` &nbsp; <button class="small" onclick="finalizeThrough('${meiso}')">✔️ Klarmarkera t.o.m. ${MONTHS_SV[m].toLowerCase()}</button></div>`
+        + monthGridHtml(year,m)
+        + `</details>`;
     });
   });
   el.innerHTML=h;
