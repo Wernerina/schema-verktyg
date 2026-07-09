@@ -29,6 +29,10 @@
   .sun{background:#fbecec}
   .sat{background:#fdf6e9}
   .viol{background:var(--badbg)!important;color:var(--bad)}
+  .warnrow{background:#fff6d6}
+  .monthgrp{margin:4px 0;border:1px solid var(--line);border-radius:7px;padding:4px 8px;background:#fbfcfe}
+  .monthgrp summary{padding:2px 0;font-weight:600}
+  h3.halfhdr{margin:12px 0 4px;font-size:13px;color:var(--head)}
   .legend span{display:inline-block;margin-right:12px;font-size:12.5px}
   .swatch{display:inline-block;width:22px;height:16px;border:1px solid var(--line);border-radius:3px;vertical-align:middle;margin-right:4px;font-size:10px;text-align:center;line-height:16px;font-weight:700}
   .issues li{margin:3px 0;font-size:13px}
@@ -107,6 +111,11 @@
   </div>
 
   <div class="panel">
+    <h2>Månadsöversikt &amp; halvårskoll <span class="muted">(fylls i automatiskt från 6-veckorsschemat ovan)</span></h2>
+    <div id="monthly"></div>
+  </div>
+
+  <div class="panel">
     <h2>Kontroll &amp; varningar</h2>
     <ul class="issues" id="issues"></ul>
   </div>
@@ -162,6 +171,11 @@ LEAVE_SHIFTS.forEach(ls=>{ const s=S.shifts.find(x=>x.code===ls.code); if(s && l
 // Back-fill: dygnspasset (X) får sin jourtid (00:00–05:20 = 320 min) så aktiv tid räknas rätt.
 { const _x=S.shifts.find(s=>s.code==='X'); if(_x && _x.jour==null) _x.jour=320; }
 if(typeof S.startDate!=="string") S.startDate="";
+// Månadsöversikt & halvårskoll (Kricko 2026-07-09): halvårsgräns i timmar/person (justerbar — sätt din avtalsgräns)
+// och vilket år månaderna visas för. Månaderna fylls i automatiskt genom att projicera 6-veckorsschemat
+// på riktiga kalenderdatum utifrån startDate (schemat upprepas var 42:a dag).
+if(typeof S.halfYearLimit!=="number") S.halfYearLimit=1250;
+if(typeof S.calYear!=="number"){ const _sd=S.startDate?new Date(S.startDate+'T00:00:00'):null; S.calYear=(_sd&&!isNaN(_sd))?_sd.getFullYear():new Date().getFullYear(); }
 // Migrering: ge varje ARBETSpass en explicit segments-lista (delpass). Delade turer = flera delpass.
 S.shifts.forEach(s=>{ if(!s.leave && !Array.isArray(s.segments)) s.segments=[{start:s.start||"08:00", end:s.end||"16:00"}]; });
 
@@ -307,7 +321,7 @@ function render(){
   renderShifts(); renderStaff(); renderLegend();
   const sd=document.getElementById("startDate"); if(sd) sd.value=S.startDate||"";
   const {issues, violCells}=analyse();
-  renderGrid(violCells); renderHoursTable(); renderIssues(issues);
+  renderGrid(violCells); renderHoursTable(); renderMonthly(); renderIssues(issues);
 }
 function renderLegend(){
   const el=document.getElementById("legend");
@@ -363,24 +377,79 @@ function renderGrid(violCells){
   h+='</tbody></table>';
   document.getElementById("grid").innerHTML=h;
 }
+// Arbetstimmar för EN cell (en dag) — samma regel som veckototalen: ledig räknas som aktiv tid
+// (ärver passets aktiva tid om den ligger på ett pass, annars sin standard-worktime; TJL=0),
+// arbetspass räknas som summan av sina intervall (jour ingår i arbetstiden här, som tidigare).
+function cellWorkHours(c){
+  if(!c) return 0;
+  const {base,leave}=parseCell(c);
+  if(leave){
+    const lv=shiftByCode(leave);
+    if(lv && typeof lv.worktime==='number') return (base ? activeMinutesOf(shiftByCode(base)) : lv.worktime)/60;
+    return 0;
+  }
+  return intervalsFor(base,0).reduce((a,iv)=> a+(iv[1]-iv[0])/60, 0);
+}
 function weekHoursData(si){
   const wk=[0,0,0,0,0,0];
-  for(let d=0;d<NDAYS;d++){
-    const c=cell(si,d); if(!c) continue;
-    const {base,leave}=parseCell(c); const w=Math.floor(d/7);
-    if(leave){
-      // Ledig räknas som AKTIV tid i sammanlagd arbetstid (ej jour). Ligger den PÅ ett schemalagt pass
-      // ärvs passets aktiva tid (längd minus jour); en ren ledig-kod använder sin standard-worktime.
-      // TJL saknar worktime => räknas som 0. Ledigt kräver ingen bemanning.
-      const lv=shiftByCode(leave);
-      if(lv && typeof lv.worktime==='number'){
-        wk[w] += (base ? activeMinutesOf(shiftByCode(base)) : lv.worktime)/60;
-      }
-    } else {
-      intervalsFor(base,d).forEach(iv=> wk[w] += (iv[1]-iv[0])/60);
-    }
-  }
+  for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(!c) continue; wk[Math.floor(d/7)] += cellWorkHours(c); }
   return {wk, tot:wk.reduce((a,b)=>a+b,0)};
+}
+// ---- Månadsöversikt & halvårskoll (projektion av 6-veckorsschemat på riktiga datum) ----
+const MONTHS_SV=["Januari","Februari","Mars","April","Maj","Juni","Juli","Augusti","September","Oktober","November","December"];
+// Vilken dag i 6-veckorscykeln (0..41) ett riktigt datum motsvarar (–1 = före startdatum / inget startdatum).
+function cycleDayForDate(dt){
+  if(!S.startDate) return -1;
+  const start=new Date(S.startDate+'T00:00:00'); if(isNaN(start)) return -1;
+  const diff=Math.floor((dt.getTime()-start.getTime())/86400000);
+  if(diff<0) return -1;
+  return ((diff%NDAYS)+NDAYS)%NDAYS;
+}
+// Summa arbetstimmar för person si under en kalendermånad (year, month 0..11).
+function monthHours(si,year,month){
+  let tot=0; const d=new Date(year,month,1);
+  while(d.getFullYear()===year && d.getMonth()===month){
+    const cd=cycleDayForDate(d);
+    if(cd>=0) tot += cellWorkHours(cell(si,cd));
+    d.setDate(d.getDate()+1);
+  }
+  return tot;
+}
+function setHalfYearLimit(v){ const n=parseFloat(v); if(!isNaN(n)) S.halfYearLimit=n; render(); }
+function setCalYear(v){ const n=parseInt(v,10); if(!isNaN(n)) S.calYear=n; render(); }
+function renderMonthly(){
+  const el=document.getElementById('monthly'); if(!el) return;
+  const cfg=`<div class="muted small no-print" style="margin-bottom:8px">📆 År: <input type="number" style="width:74px" value="${S.calYear}" onchange="setCalYear(this.value)">
+    &nbsp; ⏳ Halvårsgräns (timmar/person): <input type="number" style="width:84px" value="${S.halfYearLimit}" onchange="setHalfYearLimit(this.value)">
+    <span class="muted">— gul varning vid 90 %, röd över gränsen. Sätt din avtalsgräns här.</span></div>`;
+  if(!S.startDate){ el.innerHTML=cfg+'<p class="muted">Sätt <b>startdatum</b> i schemat ovan (måndag i vecka 1) så fylls månaderna i automatiskt från 6-veckorsschemat.</p>'; return; }
+  const year=S.calYear, limit=S.halfYearLimit;
+  let h=cfg;
+  [['Första halvåret',[0,1,2,3,4,5]],['Andra halvåret',[6,7,8,9,10,11]]].forEach(([title,months])=>{
+    h+=`<h3 class="halfhdr">${title} ${year} <span class="muted" style="font-weight:400">(${MONTHS_SV[months[0]].toLowerCase()}–${MONTHS_SV[months[5]].toLowerCase()})</span></h3>`;
+    h+='<div style="overflow-x:auto"><table><thead><tr><th class="namecell" style="text-align:left">Personal</th>'
+      + months.map(m=>`<th>${MONTHS_SV[m].slice(0,3)}</th>`).join('')
+      + '<th>Σ halvår</th><th>Gräns</th></tr></thead><tbody>';
+    S.staff.forEach((name,si)=>{
+      const per=months.map(m=>monthHours(si,year,m));
+      const sum=per.reduce((a,b)=>a+b,0);
+      const over=sum>=limit, near=!over && sum>=0.9*limit;
+      const cls=over?'viol':near?'warnrow':'';
+      h+=`<tr class="${cls}"><td class="namecell" style="text-align:left">${name}</td>`
+        + per.map(x=>`<td>${x?x.toFixed(0):'–'}</td>`).join('')
+        + `<td class="tot">${sum.toFixed(0)} h</td><td>${sum.toFixed(0)}/${limit} ${over?'⛔':near?'⚠️':''}</td></tr>`;
+    });
+    h+='</tbody></table></div>';
+    months.forEach(m=>{
+      const perStaff=S.staff.map((name,si)=>({name,h:monthHours(si,year,m)}));
+      const msum=perStaff.reduce((a,p)=>a+p.h,0);
+      h+=`<details class="monthgrp"><summary>${MONTHS_SV[m]} ${year} — Σ ${msum.toFixed(0)} h</summary>`
+        + `<div class="small" style="padding:4px 0 6px 10px">`
+        + perStaff.map(p=>`${p.name}: <b>${p.h.toFixed(0)} h</b>`).join(' &nbsp;·&nbsp; ')
+        + `</div></details>`;
+    });
+  });
+  el.innerHTML=h;
 }
 // Veckotimmar i en egen lista (flyttad ut ur namnkolumnen så att schemat blir smalare
 // och alla 6 veckor får plats på skärmen även med datum). Önskat av Kricko 2026-06-07.
