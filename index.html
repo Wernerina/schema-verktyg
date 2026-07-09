@@ -36,6 +36,8 @@
   .mgrid td.daycell{width:26px;height:26px;font-size:11px}
   .mgrid th{font-size:10px;padding:2px}
   .lockbadge{font-size:11px;color:#2b6cb0;font-weight:600}
+  .cellsel{width:100%;height:100%;min-width:34px;border:none;background:transparent;font:inherit;font-weight:700;text-align:center;text-align-last:center;color:inherit;cursor:pointer;padding:0;-webkit-appearance:none;appearance:none}
+  .cellsel:hover{outline:2px solid var(--head);outline-offset:-2px}
   .monthgrp{margin:4px 0;border:1px solid var(--line);border-radius:7px;padding:4px 8px;background:#fbfcfe}
   .monthgrp summary{padding:2px 0;font-weight:600}
   h3.halfhdr{margin:12px 0 4px;font-size:13px;color:var(--head)}
@@ -97,9 +99,10 @@
   </div>
 
   <div class="panel" style="overflow-x:auto">
-    <h2>Schema — 6 veckor (klicka i en ruta för att sätta/ändra pass)</h2>
-    <div class="muted small no-print" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span> &nbsp; <button class="small" onclick="window.print()">🖨️ Skriv ut alla veckor</button></div>
-    <div id="leavebar" class="no-print" style="margin-bottom:8px">
+    <h2>Schema — 6 veckor <span class="muted">(välj pass i listan i varje ruta)</span></h2>
+    <div class="muted small no-print" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span> &nbsp; <button class="small" onclick="window.print()">🖨️ Skriv ut alla veckor</button>
+    <br><span class="muted">Klicka i en ruta och välj pass i listan. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten <b>på</b> passet (t.ex. dygn minus jour).</span></div>
+    <div id="leavebar" class="no-print" style="margin-bottom:8px;display:none">
       <span class="muted small">Läge:</span>
       <button class="small primary" data-mode="" onclick="setLeaveMode('')">✏️ Bygg schema</button>
       <button class="small" data-mode="SJK" onclick="setLeaveMode('SJK')">🤒 Sjuk</button>
@@ -368,6 +371,25 @@ function renderStaff(){
     <input style="width:120px" value="${n}" onchange="updStaff(${i},this.value)">
     <button class="small" onclick="delStaff(${i})">×</button></span>`).join("");
 }
+// ---- Dropdown-val i schemarutorna (Kricko 2026-07-09: droplist istället för att klicka sig fram) ----
+// En <select> per ruta: tom (·) + arbetspass + ledig-koder. Väljer man en ledig-kod på en dag som redan
+// har ett schemalagt pass läggs ledigheten PÅ passet (t.ex. X→SJK = dygn minus jour); annars som ren ledig.
+function resolvePick(cur, picked){
+  const p=parseCell(cur); const sh=shiftByCode(picked);
+  if(picked==='') return '';
+  if(sh && sh.leave) return p.base ? (p.base+'>'+picked) : picked;
+  return picked;
+}
+function cellSelectHtml(cur, onchangeCall){
+  const p=parseCell(cur); const overlay=p.base&&p.leave;
+  let opts = overlay ? `<option value="${cur}" selected>${p.base}→${p.leave}</option>` : '';
+  opts += `<option value=""${cur===''?' selected':''}>·</option>`;
+  S.shifts.filter(s=>!s.leave).forEach(s=>{ const sel=(!overlay&&p.base===s.code&&!p.leave)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
+  S.shifts.filter(s=>s.leave).forEach(s=>{ const sel=(!overlay&&p.leave===s.code&&!p.base)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
+  return `<select class="cellsel" onchange="${onchangeCall}">${opts}</select>`;
+}
+function onCellSelectBase(si,di,picked){ setCell(si,di, resolvePick(cell(si,di), picked)); render(); }
+function onCellSelectMonth(iso,si,picked){ const dt=new Date(iso+'T00:00:00'); devSet(iso,si, resolvePick(effectiveCell(dt,si), picked)); render(); }
 function renderGrid(violCells){
   let h='<table><thead><tr><th class="namecell">Personal</th>';
   for(let w=0;w<6;w++) h+=`<th class="wk" colspan="7">Vecka ${w+1}</th>`;
@@ -384,7 +406,7 @@ function renderGrid(violCells){
       const title=leaveSh?(leaveSh.name+(baseSh?(' (schemalagt: '+baseSh.name+')'):'')):(baseSh?baseSh.name:'ledig');
       const bg = violCells[si+"-"+d] ? '' : (dispSh?`style="background:${dispSh.color}"`:'');
       const cls = 'daycell '+(violCells[si+"-"+d]?'viol ':'')+(d%7===6?'sun':d%7===5?'sat':'');
-      h+=`<td class="${cls}" ${bg} onclick="onCell(${si},${d})" title="${title}">${label}</td>`;
+      h+=`<td class="${cls}" ${bg} title="${title}">${cellSelectHtml(c, `onCellSelectBase(${si},${d},this.value)`)}</td>`;
     }
     h+='</tr>';
   });
@@ -493,12 +515,29 @@ function monthGridHtml(year,m){
       const cls='daycell '+(isDev?'devcell ':'')+(lk?'locked ':'')+(wi===6?'sun':wi===5?'sat':'');
       const bg=dispSh?`style="background:${dispSh.color}"`:'';
       const title=(leaveSh?leaveSh.name:(baseSh?baseSh.name:'ledig'))+(isDev?' (avvikelse)':'')+(lk?' – klarmarkerad':'');
-      h+=`<td class="${cls}" ${bg} onclick="onMonthCell('${iso}',${si})" title="${title}">${label}</td>`;
+      h+=`<td class="${cls}" ${bg} title="${title}">${cellSelectHtml(code, `onCellSelectMonth('${iso}',${si},this.value)`)}</td>`;
     }
     h+='</tr>';
   });
   h+='</tbody></table></div>';
   return h;
+}
+// Öppet-läge per månad bevaras över omritningar (så en redigering inte fäller ihop månaden man jobbar i).
+// Grid:en byggs bara för öppna månader (annars blir det tungt med selects i alla 12 månader).
+let openMonths = new Set();
+function monthKey(y,m){ return y+'-'+m; }
+function monthBodyHtml(y,m){
+  const mm=monthMax(y,m); const meiso=isoDate(new Date(y,m,daysInMonth(y,m)));
+  const perStaff=S.staff.map((name,si)=>({name,h:monthHours(si,y,m)}));
+  return `<div class="small" style="padding:4px 0 6px 4px">`
+    + perStaff.map(p=>{ const flag=p.h>=mm?' ⛔':p.h>=0.9*mm?' ⚠️':''; return `${p.name}: <b>${p.h.toFixed(1)} h</b>${flag}`; }).join(' &nbsp;·&nbsp; ')
+    + ` &nbsp; <button class="small" onclick="finalizeThrough('${meiso}')">✔️ Klarmarkera t.o.m. ${MONTHS_SV[m].toLowerCase()}</button></div>`
+    + monthGridHtml(y,m);
+}
+function onMonthToggle(y,m,isOpen){
+  const k=monthKey(y,m); const body=document.getElementById('mbody-'+y+'-'+m);
+  if(isOpen){ openMonths.add(k); if(body && !body.innerHTML.trim()) body.innerHTML=monthBodyHtml(y,m); }
+  else openMonths.delete(k);
 }
 function renderMonthly(){
   const el=document.getElementById('monthly'); if(!el) return;
@@ -511,7 +550,7 @@ function renderMonthly(){
     🔒 Klarmarkerat t.o.m.: <b>${S.lockedThrough||'– (inget ännu)'}</b>
     &nbsp; Grundschema-ändringar gäller from: <input type="date" onchange="applyBaseFrom(this.value)">
     ${S.lockedThrough?` &nbsp;<button class="small" onclick="clearLock()">Lås upp alla</button>`:''}
-    <br><span class="muted">Öppna en månad och <b>klicka i rutorna</b> för att ändra/markera avvikelser (bygg-läge byter pass, markera-läget ovanför sätter sjuk/VAB/semester/FP). <b>Klarmarkera</b> fryser månaden så att senare ändringar i grundschemat inte påverkar den — de slår bara igenom från datumet du anger. Medvetna avvikelser ligger alltid kvar.</span></div>`;
+    <br><span class="muted">Öppna en månad och <b>välj pass i listan</b> i varje ruta för att ändra/markera avvikelser. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten på passet (t.ex. dygn minus jour). <b>Klarmarkera</b> fryser månaden så att senare ändringar i grundschemat inte påverkar den — de slår bara igenom från datumet du anger. Medvetna avvikelser ligger alltid kvar.</span></div>`;
   const year=S.calYear;
   let h=cfg+lockLine;
   [['Första halvåret',[0,1,2,3,4,5],0],['Andra halvåret',[6,7,8,9,10,11],1]].forEach(([title,months,hi])=>{
@@ -525,20 +564,17 @@ function renderMonthly(){
       const sum=per.reduce((a,b)=>a+b,0);
       const hcls=limClass(sum,hlimit,'viol','warnrow');
       h+=`<tr class="${hcls}"><td class="namecell" style="text-align:left">${name}</td>`
-        + per.map((x,i)=>{ const mm=monthMax(year,months[i]); const cc=x?limClass(x,mm,'viol','cellwarn'):''; return `<td class="${cc}">${x?x.toFixed(0):'–'}</td>`; }).join('')
-        + `<td class="tot">${sum.toFixed(0)} h</td><td>${sum.toFixed(0)}/${hlimit} ${sum>=hlimit?'⛔':sum>=0.9*hlimit?'⚠️':''}</td></tr>`;
+        + per.map((x,i)=>{ const mm=monthMax(year,months[i]); const cc=x?limClass(x,mm,'viol','cellwarn'):''; return `<td class="${cc}">${x?x.toFixed(1):'–'}</td>`; }).join('')
+        + `<td class="tot">${sum.toFixed(1)} h</td><td>${sum.toFixed(1)}/${hlimit} ${sum>=hlimit?'⛔':sum>=0.9*hlimit?'⚠️':''}</td></tr>`;
     });
     h+='</tbody></table></div>';
     months.forEach(m=>{
       const mm=monthMax(year,m); const meiso=isoDate(new Date(year,m,daysInMonth(year,m)));
-      const perStaff=S.staff.map((name,si)=>({name,h:monthHours(si,year,m)}));
-      const msum=perStaff.reduce((a,p)=>a+p.h,0);
-      const monthLocked=isLocked(meiso);
-      h+=`<details class="monthgrp"><summary>${MONTHS_SV[m]} ${year} — Σ ${msum.toFixed(0)} h ${monthLocked?'<span class="lockbadge">🔒 klarmarkerad</span>':''} <span class="muted" style="font-weight:400">(månadsgräns ${mm} h/person)</span></summary>`
-        + `<div class="small" style="padding:4px 0 6px 4px">`
-        + perStaff.map(p=>{ const flag=p.h>=mm?' ⛔':p.h>=0.9*mm?' ⚠️':''; return `${p.name}: <b>${p.h.toFixed(0)} h</b>${flag}`; }).join(' &nbsp;·&nbsp; ')
-        + ` &nbsp; <button class="small" onclick="finalizeThrough('${meiso}')">✔️ Klarmarkera t.o.m. ${MONTHS_SV[m].toLowerCase()}</button></div>`
-        + monthGridHtml(year,m)
+      const msum=S.staff.reduce((a,n,si)=>a+monthHours(si,year,m),0);
+      const monthLocked=isLocked(meiso); const k=monthKey(year,m); const isOpen=openMonths.has(k);
+      h+=`<details class="monthgrp" ${isOpen?'open':''} ontoggle="onMonthToggle(${year},${m},this.open)">`
+        + `<summary>${MONTHS_SV[m]} ${year} — Σ ${msum.toFixed(1)} h ${monthLocked?'<span class="lockbadge">🔒 klarmarkerad</span>':''} <span class="muted" style="font-weight:400">(månadsgräns ${mm} h/person)</span></summary>`
+        + `<div class="mbody" id="mbody-${year}-${m}">${isOpen?monthBodyHtml(year,m):''}</div>`
         + `</details>`;
     });
   });
@@ -553,8 +589,8 @@ function renderHoursTable(){
   S.staff.forEach((name,si)=>{
     const {wk,tot}=weekHoursData(si);
     h+=`<tr><td class="namecell" style="text-align:left">${name}</td>`
-      + wk.map(x=>`<td>${x?x.toFixed(0):'–'}</td>`).join('')
-      + `<td class="tot">${tot.toFixed(0)} h</td></tr>`;
+      + wk.map(x=>`<td>${x?x.toFixed(1):'–'}</td>`).join('')
+      + `<td class="tot">${tot.toFixed(1)} h</td></tr>`;
   });
   h+='</tbody></table>';
   document.getElementById("hoursTable").innerHTML=h;
