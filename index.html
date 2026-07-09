@@ -522,6 +522,47 @@ function monthGridHtml(year,m){
   h+='</tbody></table></div>';
   return h;
 }
+// Kontroll & varningar PER MÅNAD (Kricko 2026-07-09) — samma regler som grundschemat, men körda på de
+// EFFEKTIVA (avvikelse-medvetna) dagarna i en riktig kalendermånad. Ett fönster med ±3 dygns marginal så
+// att pass över månadsgränsen och veckovila vid kanten hanteras; bara brott som rör månadens dagar rapporteras.
+function analyseMonth(year, m){
+  const issues=[]; const days=daysInMonth(year,m); const PAD=3, W=days+2*PAD;
+  const dateAt=(k)=>{ const d=new Date(year,m,1); d.setDate(1-PAD+k); return d; };
+  const inMonth=(k)=>{ const d=dateAt(k); return d.getFullYear()===year && d.getMonth()===m; };
+  const spanTouchesMonth=(a,b)=>{ const k0=Math.floor(a/1440), k1=Math.floor((b-1)/1440); for(let k=k0;k<=k1;k++){ if(k>=0&&k<W&&inMonth(k)) return true; } return false; };
+  // Per person: max 24 h i sträck + 36 h veckovila (avvikelser som LÄGGER TILL arbete kan bryta dessa).
+  S.staff.forEach((name,si)=>{
+    const ivs=[];
+    for(let k=0;k<W;k++){ const code=effectiveCell(dateAt(k),si); if(code) intervalsFor(code,k).forEach(iv=> ivs.push([iv[0],iv[1]])); }
+    if(!ivs.length) return;
+    const blocks=mergeBlocks(ivs);
+    blocks.forEach(b=>{ const len=(b[1]-b[0])/60; if(len>24+1e-6 && spanTouchesMonth(b[0],b[1])) issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h)`}); });
+    const gaps=[]; let p=0; const TOT=W*1440;
+    for(const b of blocks){ if(b[0]>p) gaps.push([p,b[0]]); p=Math.max(p,b[1]); }
+    if(p<TOT) gaps.push([p,TOT]);
+    const rlist=gaps.filter(g=>g[1]-g[0]>=36*60);
+    if(!rlist.length){ issues.push({bad:true,t:`${name}: saknar 36 h sammanhängande ledigt (veckovila)`}); }
+    else for(let i=0;i<rlist.length-1;i++){ const s0=rlist[i][1], s1=rlist[i+1][0]; if(s1-s0>7*1440+1 && spanTouchesMonth(s0,s1)) issues.push({bad:true,t:`${name}: ${((s1-s0)/1440).toFixed(1)} dygn mellan två veckovilor (max 7)`}); }
+  });
+  // Täckning dygnet runt + dubbelbemanning 07:30–16:00, per riktig dag i månaden.
+  for(let k=PAD;k<PAD+days;k++){
+    const cov=new Array(48).fill(0);
+    S.staff.forEach((n,si)=>{ const code=effectiveCell(dateAt(k),si); if(code) intervalsFor(code,k).forEach(iv=> mark(cov,iv,k*1440)); });
+    { const pk=k-1; S.staff.forEach((n,si)=>{ const code=effectiveCell(dateAt(pk),si); if(code) intervalsFor(code,pk).forEach(iv=> mark(cov,iv,k*1440)); }); }
+    const label=`${dateAt(k).getDate()} ${MONTHS_SV[m].toLowerCase()}`;
+    if(cov.some(x=>x<1)) issues.push({bad:true,t:`${label}: täckning saknas dygnet runt`});
+    let dbl=true; for(let i=15;i<32;i++) if(cov[i]<2) dbl=false;
+    if(!dbl) issues.push({warn:true,t:`${label}: mindre än 2 personer 07:30–16:00`});
+  }
+  return issues;
+}
+function monthIssuesHtml(issues){
+  if(!issues.length) return '<ul class="issues" style="margin:6px 0 0"><li class="good">✓ Inga regelbrott denna månad.</li></ul>';
+  const bad=issues.filter(i=>i.bad), warn=issues.filter(i=>!i.bad);
+  return '<div style="margin:6px 0 0"><b class="small">Kontroll &amp; varningar (denna månad):</b><ul class="issues">'
+    + bad.map(i=>`<li class="bad">✗ ${i.t}</li>`).join('')
+    + warn.map(i=>`<li>⚠ ${i.t}</li>`).join('') + '</ul></div>';
+}
 // Öppet-läge per månad bevaras över omritningar (så en redigering inte fäller ihop månaden man jobbar i).
 // Grid:en byggs bara för öppna månader (annars blir det tungt med selects i alla 12 månader).
 let openMonths = new Set();
@@ -532,7 +573,8 @@ function monthBodyHtml(y,m){
   return `<div class="small" style="padding:4px 0 6px 4px">`
     + perStaff.map(p=>{ const flag=p.h>=mm?' ⛔':p.h>=0.9*mm?' ⚠️':''; return `${p.name}: <b>${p.h.toFixed(1)} h</b>${flag}`; }).join(' &nbsp;·&nbsp; ')
     + ` &nbsp; <button class="small" onclick="finalizeThrough('${meiso}')">✔️ Klarmarkera t.o.m. ${MONTHS_SV[m].toLowerCase()}</button></div>`
-    + monthGridHtml(y,m);
+    + monthGridHtml(y,m)
+    + monthIssuesHtml(analyseMonth(y,m));
 }
 function onMonthToggle(y,m,isOpen){
   const k=monthKey(y,m); const body=document.getElementById('mbody-'+y+'-'+m);
@@ -572,8 +614,10 @@ function renderMonthly(){
       const mm=monthMax(year,m); const meiso=isoDate(new Date(year,m,daysInMonth(year,m)));
       const msum=S.staff.reduce((a,n,si)=>a+monthHours(si,year,m),0);
       const monthLocked=isLocked(meiso); const k=monthKey(year,m); const isOpen=openMonths.has(k);
+      const mi=analyseMonth(year,m); const nb=mi.filter(i=>i.bad).length, nw=mi.length-nb;
+      const badge = nb?`<span style="color:var(--bad);font-weight:700"> ✗${nb}</span>`:(nw?`<span style="color:#b7791f;font-weight:700"> ⚠${nw}</span>`:'<span class="good" style="font-weight:700"> ✓</span>');
       h+=`<details class="monthgrp" ${isOpen?'open':''} ontoggle="onMonthToggle(${year},${m},this.open)">`
-        + `<summary>${MONTHS_SV[m]} ${year} — Σ ${msum.toFixed(1)} h ${monthLocked?'<span class="lockbadge">🔒 klarmarkerad</span>':''} <span class="muted" style="font-weight:400">(månadsgräns ${mm} h/person)</span></summary>`
+        + `<summary>${MONTHS_SV[m]} ${year} — Σ ${msum.toFixed(1)} h${badge} ${monthLocked?'<span class="lockbadge">🔒 klarmarkerad</span>':''} <span class="muted" style="font-weight:400">(månadsgräns ${mm} h/person)</span></summary>`
         + `<div class="mbody" id="mbody-${year}-${m}">${isOpen?monthBodyHtml(year,m):''}</div>`
         + `</details>`;
     });
