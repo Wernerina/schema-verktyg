@@ -426,6 +426,31 @@ function cellWorkHours(c){
   }
   return intervalsFor(base,0).reduce((a,iv)=> a+(iv[1]-iv[0])/60, 0);
 }
+// Jour är ALLTID 00:00–05:20 (Kricko 2026-07-13) → ett fast klockfönster på 320 min efter midnatt varje dygn.
+const JOUR_LEN=320;
+function _ovl(a1,a2,b1,b2){ return Math.max(0, Math.min(a2,b2)-Math.max(a1,b1)); }
+// Räknade MINUTER för en cell som fysiskt infaller i kalenderdel p (0 = startdagen 00:00–24:00, 1 = dygnet efter).
+// Pass som går över midnatt delas här, så timmarna hamnar på rätt dag/månad. Arbetspass = hela klocktiden;
+// ledig-PÅ-pass = klocktid minus jour (00:00–05:20 i respektive dygn); ren ledig = platt worktime på dagen.
+function countedMin(code, p){
+  if(!code) return 0;
+  const {base,leave}=parseCell(code);
+  const lo=p*1440, hi=lo+1440;
+  if(leave){
+    const lv=shiftByCode(leave);
+    if(!(lv && typeof lv.worktime==='number')) return 0;
+    if(!base) return p===0 ? lv.worktime : 0;
+    let tot=0;
+    intervalsFor(base,0).forEach(iv=>{
+      const clk=_ovl(iv[0],iv[1],lo,hi);
+      const jr =_ovl(iv[0],iv[1],lo,lo+JOUR_LEN);
+      tot += Math.max(0, clk-jr);
+    });
+    return tot;
+  }
+  let tot=0; intervalsFor(base,0).forEach(iv=> tot += _ovl(iv[0],iv[1],lo,hi));
+  return tot;
+}
 function weekHoursData(si){
   const wk=[0,0,0,0,0,0];
   for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(!c) continue; wk[Math.floor(d/7)] += cellWorkHours(c); }
@@ -458,11 +483,17 @@ function effectiveCell(dt,si){
   if(isLocked(iso)){ const f=frozenGet(iso,si); if(f!==null) return f; }
   return projectBase(dt,si);
 }
-// Summa arbetstimmar för person si under en kalendermånad (0..11) — utifrån EFFEKTIVT värde per dag.
+// Summa arbetstimmar under en kalendermånad — timmarna räknas på den kalenderdag de FAKTISKT infaller
+// (pass över midnatt delas vid midnatt; timmarna efter midnatt hör till nästa dag/månad — Kricko 2026-07-13).
 function monthHours(si,year,month){
   let tot=0; const d=new Date(year,month,1);
-  while(d.getFullYear()===year && d.getMonth()===month){ tot += cellWorkHours(effectiveCell(d,si)); d.setDate(d.getDate()+1); }
-  return tot;
+  while(d.getFullYear()===year && d.getMonth()===month){
+    tot += countedMin(effectiveCell(d,si),0);                                   // dagens timmar fram till midnatt
+    const prev=new Date(d); prev.setDate(prev.getDate()-1);
+    tot += countedMin(effectiveCell(prev,si),1);                                // gårdagens pass som spiller in efter midnatt
+    d.setDate(d.getDate()+1);
+  }
+  return tot/60;
 }
 // Klarmarkera t.o.m. ett datum: frys det som gäller nu (grundschema+avvikelser) för varje dag från start t.o.m. datumet.
 function finalizeThrough(iso){
