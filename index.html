@@ -631,17 +631,17 @@ function renderMonthly(){
     h+=`<h3 class="halfhdr">${title} ${year} <span class="muted" style="font-weight:400">(${MONTHS_SV[months[0]].toLowerCase()}–${MONTHS_SV[months[5]].toLowerCase()}, gräns ${hlimit} h)</span></h3>`;
     h+='<div style="overflow-x:auto"><table><thead><tr><th class="namecell" style="text-align:left">Personal</th>'
       + months.map(m=>`<th title="månadsgräns ${monthMax(year,m)} h">${MONTHS_SV[m].slice(0,3)}</th>`).join('')
-      + '<th>Σ halvår</th><th>Gräns</th><th>Kvar / Över</th></tr></thead><tbody>';
+      + '<th>Σ halvår</th><th>Kvar / Över</th></tr></thead><tbody>';
     S.staff.forEach((name,si)=>{
       const per=months.map(m=>monthHours(si,year,m));
       const sum=per.reduce((a,b)=>a+b,0);
       const hcls=limClass(sum,hlimit,'viol','warnrow');
       h+=`<tr class="${hcls}"><td class="namecell" style="text-align:left">${name}</td>`
         + per.map((x,i)=>{ const mm=monthMax(year,months[i]); const cc=x?limClass(x,mm,'viol','cellwarn'):''; return `<td class="${cc}">${x?x.toFixed(1):'–'}</td>`; }).join('')
-        + `<td class="tot">${sum.toFixed(1)} h</td><td>${sum.toFixed(1)}/${hlimit} ${sum>=hlimit?'⛔':sum>=0.9*hlimit?'⚠️':''}</td>`
+        + `<td class="tot">${sum.toFixed(1)} h</td>`
         + ((hlimit-sum)>=0
-            ? `<td style="color:var(--ok);font-weight:600">${(hlimit-sum).toFixed(1)} kvar</td>`
-            : `<td class="viol" style="font-weight:600">${(sum-hlimit).toFixed(1)} över</td>`)
+            ? `<td style="color:var(--ok);font-weight:600">${(hlimit-sum).toFixed(1)} kvar${sum>=0.9*hlimit?' ⚠️':''}</td>`
+            : `<td class="viol" style="font-weight:600">${(sum-hlimit).toFixed(1)} över ⛔</td>`)
         + '</tr>';
     });
     h+='</tbody></table></div>';
