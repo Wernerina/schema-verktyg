@@ -638,12 +638,15 @@ function monthGridHtml(year,m){
   S.staff.forEach((name,si)=>{
     h+=`<tr><td class="namecell">${name}</td>`;
     for(let day=1;day<=days;day++){ const dt=new Date(year,m,day); const iso=isoDate(dt); const code=effectiveCell(dt,si);
-      const p=parseCell(code); const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=p.base?shiftByCode(p.base):null; const dispSh=leaveSh||baseSh;
-      const label=(p.base&&p.leave)?(p.base+'→'+p.leave):(code||'·');
+      const p=parseCell(code); const isAd=isAdhoc(p.base);
+      const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=(!isAd&&p.base)?shiftByCode(p.base):null; const dispSh=leaveSh||baseSh;
+      const atTxt=(p.at!=null)?(' '+(p.dir==='t'?'t.o.m ':'fr.o.m ')+min2hm(p.at)):'';
+      const baseName=isAd?('Avvikande '+adhocLabel(p.base)):(baseSh?baseSh.name:'');
       const isDev=devGet(iso,si)!==null, lk=isLocked(iso), wi=(dt.getDay()+6)%7;
       const cls='daycell '+(isDev?'devcell ':'')+(lk?'locked ':'')+(wi===6?'sun':wi===5?'sat':'');
-      const bg=dispSh?`style="background:${dispSh.color}"`:'';
-      const title=(leaveSh?leaveSh.name:(baseSh?baseSh.name:'ledig'))+(isDev?' (avvikelse)':'')+(lk?' – klarmarkerad':'');
+      const adBg=isAd&&!p.leave?'style="background:#e6f4ea"':'';
+      const bg=dispSh?`style="background:${dispSh.color}"`:adBg;
+      const title=(leaveSh?(leaveSh.name+atTxt+(baseName?(' (schemalagt: '+baseName+')'):'')):(baseName||'ledig'))+(isDev?' (avvikelse)':'')+(lk?' – klarmarkerad':'');
       h+=`<td class="${cls}" ${bg} title="${title}">${cellSelectHtml(code, `onCellSelectMonth('${iso}',${si},this.value)`)}</td>`;
     }
     h+='</tr>';
