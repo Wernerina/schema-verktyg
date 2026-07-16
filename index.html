@@ -101,7 +101,7 @@
   <div class="panel" style="overflow-x:auto">
     <h2>Schema — 6 veckor <span class="muted">(välj pass i listan i varje ruta)</span></h2>
     <div class="muted small no-print" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span> &nbsp; <button class="small" onclick="window.print()">🖨️ Skriv ut alla veckor</button>
-    <br><span class="muted">Klicka i en ruta och välj pass i listan. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten <b>på</b> passet (t.ex. dygn minus jour). Du får då frågan om det gäller <b>hela passet</b> eller bara en del — t.ex. skriv <b>12:00</b> om personen jobbade fram till 12:00 och sedan gick hem, eller <b>till 12:00</b> om hen var ledig fram till 12:00 och kom in sedan.</span></div>
+    <br><span class="muted">Klicka i en ruta och välj pass i listan. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten <b>på</b> passet (t.ex. dygn minus jour). Du får då frågan om det gäller <b>hela passet</b> eller bara en del — t.ex. skriv <b>12:00</b> om personen jobbade fram till 12:00 och sedan gick hem, eller <b>till 12:00</b> om hen var ledig fram till 12:00 och kom in sedan.<br>Jobbade någon en <b>avvikande tid</b> (t.ex. 11–23)? Välj <b>⏱ Avvikande tid…</b> längst ner i listan och skriv från–till — då behöver du inte skapa en ny passtyp.</span></div>
     <div id="leavebar" class="no-print" style="margin-bottom:8px;display:none">
       <span class="muted small">Läge:</span>
       <button class="small primary" data-mode="" onclick="setLeaveMode('')">✏️ Bygg schema</button>
@@ -229,7 +229,22 @@ function segmentsOf(sh){
 }
 // Alla arbetsintervall (absoluta minuter från dygn0 00:00) för ett pass på dag d.
 // En DELAD TUR ger FLERA intervall. Returnerar en array (tom = ledigt/semester).
+// AVVIKANDE (engångs-)pass anges direkt i rutan som "~11:00-23:00" (delad tur: "~08:00-12:00,13:00-17:00").
+// Ingen egen passtyp behövs. Inget jour på avvikande pass.
+function isAdhoc(code){ return typeof code==='string' && code.charAt(0)==='~'; }
+function adhocSegments(code){
+  return code.slice(1).split(',').map(s=>s.trim()).filter(Boolean).map(rng=>{
+    const m=rng.split('-'); return {start:(m[0]||'').trim(), end:(m[1]||m[0]||'').trim()};
+  }).filter(seg=> seg.start.indexOf(':')>=0 && seg.end.indexOf(':')>=0 && !isNaN(hm2min(seg.start)) && !isNaN(hm2min(seg.end)));
+}
+function adhocLabel(code){ const s=adhocSegments(code); return s.length? s.map(x=>x.start+'–'+x.end).join(' ') : code; }
 function intervalsFor(code, d){
+  if(isAdhoc(code)){
+    return adhocSegments(code).map(seg=>{
+      let st=hm2min(seg.start), en=hm2min(seg.end); let dur=en-st; if(dur<=0) dur+=1440;
+      const a=d*1440+st; return [a, a+dur];
+    });
+  }
   const sh = shiftByCode(code); if(!sh || sh.leave) return [];
   return segmentsOf(sh).map(seg=>{
     let st = hm2min(seg.start), en = hm2min(seg.end);
@@ -421,12 +436,15 @@ function resolvePick(cur, picked){
   return picked;
 }
 function cellSelectHtml(cur, onchangeCall){
-  const p=parseCell(cur); const overlay=p.base&&p.leave;
+  const p=parseCell(cur); const overlay=p.base&&p.leave; const ad=isAdhoc(p.base);
   const atTxt=(p.at!=null)?(' '+(p.dir==='t'?'t.o.m ':'fr.o.m ')+min2hm(p.at)):'';
-  let opts = overlay ? `<option value="${cur}" selected>${p.base}→${p.leave}${atTxt}</option>` : '';
+  let opts='';
+  if(ad) opts = `<option value="${cur}" selected>${adhocLabel(p.base)}${p.leave?('→'+p.leave+atTxt):''}</option>`;
+  else if(overlay) opts = `<option value="${cur}" selected>${p.base}→${p.leave}${atTxt}</option>`;
   opts += `<option value=""${cur===''?' selected':''}>·</option>`;
-  S.shifts.filter(s=>!s.leave).forEach(s=>{ const sel=(!overlay&&p.base===s.code&&!p.leave)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
-  S.shifts.filter(s=>s.leave).forEach(s=>{ const sel=(!overlay&&p.leave===s.code&&!p.base)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
+  S.shifts.filter(s=>!s.leave).forEach(s=>{ const sel=(!overlay&&!ad&&p.base===s.code&&!p.leave)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
+  S.shifts.filter(s=>s.leave).forEach(s=>{ const sel=(!overlay&&!ad&&p.leave===s.code&&!p.base)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
+  opts += `<option value="__ADHOC__">⏱ Avvikande tid…</option>`;
   return `<select class="cellsel" onchange="${onchangeCall}">${opts}</select>`;
 }
 // Ledig-kod på ett schemalagt pass → fråga om DELVIS ledighet (gick hem / kom in mitt på passet).
@@ -445,7 +463,18 @@ function makeOverlay(base, leaveCode){
   if(t.indexOf(':')<0 || isNaN(hm2min(t))) return base+'>'+leaveCode;   // ogiltig tid = hela passet
   return base+'>'+leaveCode+'@'+dir+min2hm(hm2min(t));
 }
+// Avvikande engångspass: fråga efter från–till tid, spara som "~11:00-23:00" (ingen egen passtyp).
+function makeAdhoc(prev){
+  const pc=parseCell(prev); const def=isAdhoc(pc.base)?pc.base.slice(1):'';
+  const ans=prompt('Avvikande pass — ange tid.\n\nT.ex.  11:00-23:00\nDelad tur:  08:00-12:00, 13:00-17:00\n(Tomt = rensa rutan.)', def);
+  if(ans===null) return prev;                     // Avbryt = oförändrat
+  const t=ans.trim(); if(t==='') return '';       // tomt = rensa
+  const code='~'+t.replace(/\s+/g,'');
+  if(!adhocSegments(code).length){ alert('Kunde inte tolka tiden. Skriv t.ex. 11:00-23:00'); return prev; }
+  return code;
+}
 function resolvePickI(cur, picked){
+  if(picked==='__ADHOC__') return makeAdhoc(cur);
   const p=parseCell(cur); const sh=shiftByCode(picked);
   if(picked==='') return '';
   if(sh && sh.leave && p.base) return makeOverlay(p.base, picked);   // ledig PÅ pass → ev. delvis
@@ -463,13 +492,14 @@ function renderGrid(violCells){
   S.staff.forEach((name,si)=>{
     h+=`<tr><td class="namecell">${name}</td>`;
     for(let d=0;d<NDAYS;d++){
-      const c=cell(si,d); const p=parseCell(c);
-      const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=p.base?shiftByCode(p.base):null;
+      const c=cell(si,d); const p=parseCell(c); const isAd=isAdhoc(p.base);
+      const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=(!isAd&&p.base)?shiftByCode(p.base):null;
       const dispSh=leaveSh||baseSh;
       const atTxt=(p.at!=null)?(' '+(p.dir==='t'?'t.o.m ':'fr.o.m ')+min2hm(p.at)):'';
-      const label=(p.base&&p.leave)?(p.base+'→'+p.leave+atTxt):(c||'·');
-      const title=leaveSh?(leaveSh.name+atTxt+(baseSh?(' (schemalagt: '+baseSh.name+')'):'')):(baseSh?baseSh.name:'ledig');
-      const bg = violCells[si+"-"+d] ? '' : (dispSh?`style="background:${dispSh.color}"`:'');
+      const baseName=isAd?('Avvikande '+adhocLabel(p.base)):(baseSh?baseSh.name:'');
+      const title=leaveSh?(leaveSh.name+atTxt+(baseName?(' (schemalagt: '+baseName+')'):'')):(baseName||(p.leave?'ledig':'ledig'));
+      const adBg=isAd&&!p.leave?'style="background:#e6f4ea"':'';
+      const bg = violCells[si+"-"+d] ? '' : (dispSh?`style="background:${dispSh.color}"`:adBg);
       const cls = 'daycell '+(violCells[si+"-"+d]?'viol ':'')+(d%7===6?'sun':d%7===5?'sat':'');
       h+=`<td class="${cls}" ${bg} title="${title}">${cellSelectHtml(c, `onCellSelectBase(${si},${d},this.value)`)}</td>`;
     }
