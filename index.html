@@ -101,7 +101,7 @@
   <div class="panel" style="overflow-x:auto">
     <h2>Schema — 6 veckor <span class="muted">(välj pass i listan i varje ruta)</span></h2>
     <div class="muted small no-print" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span> &nbsp; <button class="small" onclick="window.print()">🖨️ Skriv ut alla veckor</button>
-    <br><span class="muted">Klicka i en ruta och välj pass i listan. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten <b>på</b> passet (t.ex. dygn minus jour).</span></div>
+    <br><span class="muted">Klicka i en ruta och välj pass i listan. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten <b>på</b> passet (t.ex. dygn minus jour). Du får då frågan om det gäller <b>hela passet</b> eller bara en del — t.ex. skriv <b>12:00</b> om personen jobbade fram till 12:00 och sedan gick hem, eller <b>till 12:00</b> om hen var ledig fram till 12:00 och kom in sedan.</span></div>
     <div id="leavebar" class="no-print" style="margin-bottom:8px;display:none">
       <span class="muted small">Läge:</span>
       <button class="small primary" data-mode="" onclick="setLeaveMode('')">✏️ Bygg schema</button>
@@ -198,13 +198,28 @@ S.shifts.forEach(s=>{ if(!s.leave && !Array.isArray(s.segments)) s.segments=[{st
 
 // ---------- Helpers ----------
 function hm2min(s){ const [h,m]=s.split(":").map(Number); return h*60+(m||0); }
+function min2hm(m){ m=((m%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); }
 function shiftByCode(c){ return S.shifts.find(x=>x.code===c); }
 // v2 (Kricko-modellen, Hearth 2026-07-08): ledig kan ligga PÅ ett schemalagt pass ("X>SJK") och ärver då
 // passets AKTIVA tid (passets längd minus jour). En cell: "" | arbetskod "X" | ledig-kod "SJK" | "X>SJK".
 let leaveMode='';
 function shiftDurationMin(sh){ if(!sh) return 0; return segmentsOf(sh).reduce((a,seg)=>{ let d=hm2min(seg.end)-hm2min(seg.start); if(d<=0) d+=1440; return a+d; },0); }
 function activeMinutesOf(sh){ return Math.max(0, shiftDurationMin(sh) - (sh&&sh.jour?sh.jour:0)); }
-function parseCell(c){ if(!c) return {base:'',leave:''}; if(c.indexOf('>')>=0){ const p=c.split('>'); return {base:p[0],leave:p[1]}; } const sh=shiftByCode(c); if(sh&&sh.leave) return {base:'',leave:c}; return {base:c,leave:''}; }
+// En cell: "" | "X" | ledig "SJK" | ledig-på-pass "X>SJK" | DELVIS ledig "X>SJK@f12:00" (jobbade till 12:00,
+// gick hem) / "X>SJK@t12:00" (ledig till 12:00, kom in sedan). at = klockminut (0..1439), dir 'f'=från/'t'=till.
+function parseCell(c){
+  if(!c) return {base:'',leave:'',at:null,dir:''};
+  if(c.indexOf('>')>=0){
+    const gt=c.split('>'); const base=gt[0]; let lv=gt[1]||''; let at=null, dir='';
+    const am=lv.indexOf('@');
+    if(am>=0){ const spec=lv.slice(am+1); lv=lv.slice(0,am);
+      dir = spec.charAt(0)==='t' ? 't' : 'f';
+      const tm = spec.replace(/^[ft]/,''); const mm=hm2min(tm); if(!isNaN(mm)) at=mm; }
+    return {base, leave:lv, at, dir};
+  }
+  const sh=shiftByCode(c); if(sh&&sh.leave) return {base:'',leave:c,at:null,dir:''};
+  return {base:c,leave:'',at:null,dir:''};
+}
 // Delpass för ett pass: en vanlig tur = ETT delpass; en DELAD TUR = flera delpass.
 // Returnerar [{start,end},...]. Bakåtkompatibelt: saknas segments används start/end.
 function segmentsOf(sh){
@@ -226,6 +241,31 @@ function intervalsFor(code, d){
 function cell(si,di){ return (S.cells[si]&&S.cells[si][di])||""; }
 function setCell(si,di,v){ if(!S.cells[si])S.cells[si]={}; S.cells[si][di]=v; }
 
+// Dela upp EN cell i ARBETADE och LEDIGA delintervall (absoluta minuter från dygn0) på dag d.
+// Vanlig arbetskod -> allt arbetat. Hel ledig-på-pass "X>SJK" -> allt ledigt. DELVIS "X>SJK@f12:00"
+// -> arbetat fram till 12:00, ledigt efter (dir 'f'); "@t12:00" -> ledigt till 12:00, arbetat efter (dir 't').
+function _clip(iv,a,b){ const s=Math.max(iv[0],a), e=Math.min(iv[1],b); return e>s?[s,e]:null; }
+function workedLeaveIvs(code,d){
+  const pc=parseCell(code);
+  if(!pc.base) return {worked:[], leave:[], leaveCode:pc.leave};        // ren ledig / tom
+  const bIvs=intervalsFor(pc.base,d);
+  if(!pc.leave) return {worked:bIvs, leave:[], leaveCode:''};            // vanligt pass
+  if(pc.at==null) return {worked:[], leave:bIvs, leaveCode:pc.leave};    // HEL ledig-på-pass (bakåtkompat)
+  const s=Math.min.apply(null,bIvs.map(iv=>iv[0])), e=Math.max.apply(null,bIvs.map(iv=>iv[1]));
+  let sp=null; [d*1440+pc.at, d*1440+pc.at+1440].forEach(cand=>{ if(sp==null && cand>=s && cand<=e) sp=cand; });
+  if(sp==null) sp=d*1440+pc.at;
+  const worked=[], leave=[];
+  bIvs.forEach(iv=>{
+    const first=_clip(iv,iv[0],sp), second=_clip(iv,sp,iv[1]);
+    if(pc.dir==='t'){ if(first) leave.push(first); if(second) worked.push(second); }   // kom in kl sp
+    else            { if(first) worked.push(first); if(second) leave.push(second); }   // gick hem kl sp
+  });
+  return {worked, leave, leaveCode:pc.leave};
+}
+// Närvaro (arbetade intervall) för en HEL cell — används av täcknings-/regelmotorn så att den arbetade
+// delen av ett delvis-ledigt pass räknas som bemannad, medan den lediga delen blir frånvaro.
+function presenceIvs(code,d){ return workedLeaveIvs(code,d).worked; }
+
 // Slå ihop intervall som överlappar/gränsar till varandra -> sammanhängande arbetsblock.
 function mergeBlocks(intervals){
   if(!intervals.length) return [];
@@ -245,7 +285,7 @@ function analyse(){
   // Per person: arbetsblock + vila
   S.staff.forEach((name,si)=>{
     const ivs=[];
-    for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ intervalsFor(c,d).forEach(iv=> ivs.push(iv.concat([d]))); } }
+    for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ presenceIvs(c,d).forEach(iv=> ivs.push(iv.concat([d]))); } }
     if(!ivs.length) return;
     const blocks = mergeBlocks(ivs.map(x=>[x[0],x[1]]));
     // Regel: max 24h sammanhängande
@@ -254,7 +294,7 @@ function analyse(){
       if(len>24+1e-6){
         issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h) — ${fmtSpan(b)}`});
         // markera dagarna i blocket
-        for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ intervalsFor(c,d).forEach(iv=>{ if(iv[0]>=b[0]-1 && iv[0]<b[1]) violCells[si+"-"+d]=true; }); } }
+        for(let d=0; d<NDAYS; d++){ const c=cell(si,d); if(c){ presenceIvs(c,d).forEach(iv=>{ if(iv[0]>=b[0]-1 && iv[0]<b[1]) violCells[si+"-"+d]=true; }); } }
       }
     });
     // Regel: veckovila — minst 36 h sammanhängande ledigt minst en gång per 7-dagarsperiod.
@@ -283,13 +323,13 @@ function analyse(){
   for(let d=0; d<NDAYS; d++){
     const cov=new Array(48).fill(0); // 30-min luckor 00:00–24:00 för detta dygn
     S.staff.forEach((name,si)=>{
-      const c=cell(si,d); if(!c) return; intervalsFor(c,d).forEach(iv=> mark(cov, iv, d*1440));
+      const c=cell(si,d); if(!c) return; presenceIvs(c,d).forEach(iv=> mark(cov, iv, d*1440));
       // pass kan sträcka sig in i nästa dygn — täck även början av nästa dag
     });
     // även pass från föregående dag som går in i detta dygn
     // föregående dygns pass som går in i detta dygn — CYKLISKT (dag 0 får spill från sista dagen,
     // eftersom schemat upprepas). Rättar falsklarmet "täckning saknas mån v1 00:00". 2026-06-07.
-    { const pd=(d-1+NDAYS)%NDAYS; S.staff.forEach((name,si)=>{ const c=cell(si,pd); if(!c) return; intervalsFor(c,pd).forEach(iv0=>{ let iv=iv0; if(pd>d){ iv=[iv0[0]-TOTMIN, iv0[1]-TOTMIN]; } mark(cov, iv, d*1440); }); }); }
+    { const pd=(d-1+NDAYS)%NDAYS; S.staff.forEach((name,si)=>{ const c=cell(si,pd); if(!c) return; presenceIvs(c,pd).forEach(iv0=>{ let iv=iv0; if(pd>d){ iv=[iv0[0]-TOTMIN, iv0[1]-TOTMIN]; } mark(cov, iv, d*1440); }); }); }
     // hål i dygnet-runt?
     let gap=cov.some((x,i)=>x<1);
     if(gap) issues.push({bad:true,t:`Dag ${dlabel(d)}: täckning saknas dygnet runt (minst 1 person varje timme).`});
@@ -382,14 +422,38 @@ function resolvePick(cur, picked){
 }
 function cellSelectHtml(cur, onchangeCall){
   const p=parseCell(cur); const overlay=p.base&&p.leave;
-  let opts = overlay ? `<option value="${cur}" selected>${p.base}→${p.leave}</option>` : '';
+  const atTxt=(p.at!=null)?(' '+(p.dir==='t'?'t.o.m ':'fr.o.m ')+min2hm(p.at)):'';
+  let opts = overlay ? `<option value="${cur}" selected>${p.base}→${p.leave}${atTxt}</option>` : '';
   opts += `<option value=""${cur===''?' selected':''}>·</option>`;
   S.shifts.filter(s=>!s.leave).forEach(s=>{ const sel=(!overlay&&p.base===s.code&&!p.leave)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
   S.shifts.filter(s=>s.leave).forEach(s=>{ const sel=(!overlay&&p.leave===s.code&&!p.base)?' selected':''; opts+=`<option value="${s.code}"${sel}>${s.code}</option>`; });
   return `<select class="cellsel" onchange="${onchangeCall}">${opts}</select>`;
 }
-function onCellSelectBase(si,di,picked){ setCell(si,di, resolvePick(cell(si,di), picked)); render(); }
-function onCellSelectMonth(iso,si,picked){ const dt=new Date(iso+'T00:00:00'); devSet(iso,si, resolvePick(effectiveCell(dt,si), picked)); render(); }
+// Ledig-kod på ett schemalagt pass → fråga om DELVIS ledighet (gick hem / kom in mitt på passet).
+function makeOverlay(base, leaveCode){
+  const ans = prompt(
+    leaveCode+' på passet '+base+' — hela passet eller en del?\n\n'+
+    '• Lämna TOMT = HELA passet '+leaveCode+' (som förut).\n'+
+    '• "12:00"  = jobbade fram till 12:00, sedan '+leaveCode+' (gick hem).\n'+
+    '• "till 12:00" = '+leaveCode+' fram till 12:00, jobbade sedan (kom in senare).', '');
+  if(ans===null) return base+'>'+leaveCode;                 // Avbryt = hela passet
+  let t=ans.trim().toLowerCase();
+  if(t==='') return base+'>'+leaveCode;
+  let dir='f';
+  if(t.indexOf('till')===0){ dir='t'; t=t.slice(4).trim(); }
+  else if(t.indexOf('fr')===0){ dir='f'; t=t.replace(/^(från|fran|fr\.o\.m|from)\.?/,'').trim(); }
+  if(t.indexOf(':')<0 || isNaN(hm2min(t))) return base+'>'+leaveCode;   // ogiltig tid = hela passet
+  return base+'>'+leaveCode+'@'+dir+min2hm(hm2min(t));
+}
+function resolvePickI(cur, picked){
+  const p=parseCell(cur); const sh=shiftByCode(picked);
+  if(picked==='') return '';
+  if(sh && sh.leave && p.base) return makeOverlay(p.base, picked);   // ledig PÅ pass → ev. delvis
+  if(sh && sh.leave) return picked;
+  return picked;
+}
+function onCellSelectBase(si,di,picked){ setCell(si,di, resolvePickI(cell(si,di), picked)); render(); }
+function onCellSelectMonth(iso,si,picked){ const dt=new Date(iso+'T00:00:00'); devSet(iso,si, resolvePickI(effectiveCell(dt,si), picked)); render(); }
 function renderGrid(violCells){
   let h='<table><thead><tr><th class="namecell">Personal</th>';
   for(let w=0;w<6;w++) h+=`<th class="wk" colspan="7">Vecka ${w+1}</th>`;
@@ -402,8 +466,9 @@ function renderGrid(violCells){
       const c=cell(si,d); const p=parseCell(c);
       const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=p.base?shiftByCode(p.base):null;
       const dispSh=leaveSh||baseSh;
-      const label=(p.base&&p.leave)?(p.base+'→'+p.leave):(c||'·');
-      const title=leaveSh?(leaveSh.name+(baseSh?(' (schemalagt: '+baseSh.name+')'):'')):(baseSh?baseSh.name:'ledig');
+      const atTxt=(p.at!=null)?(' '+(p.dir==='t'?'t.o.m ':'fr.o.m ')+min2hm(p.at)):'';
+      const label=(p.base&&p.leave)?(p.base+'→'+p.leave+atTxt):(c||'·');
+      const title=leaveSh?(leaveSh.name+atTxt+(baseSh?(' (schemalagt: '+baseSh.name+')'):'')):(baseSh?baseSh.name:'ledig');
       const bg = violCells[si+"-"+d] ? '' : (dispSh?`style="background:${dispSh.color}"`:'');
       const cls = 'daycell '+(violCells[si+"-"+d]?'viol ':'')+(d%7===6?'sun':d%7===5?'sat':'');
       h+=`<td class="${cls}" ${bg} title="${title}">${cellSelectHtml(c, `onCellSelectBase(${si},${d},this.value)`)}</td>`;
@@ -418,7 +483,10 @@ function renderGrid(violCells){
 // arbetspass räknas som summan av sina intervall (jour ingår i arbetstiden här, som tidigare).
 function cellWorkHours(c){
   if(!c) return 0;
-  const {base,leave}=parseCell(c);
+  const pc=parseCell(c);
+  // DELVIS ledig-på-pass: summera de faktiskt räknade minuterna (arbetad del + ev. ledig del) över dygnet.
+  if(pc.base && pc.leave && pc.at!=null){ let m=0; for(let p=0;p<3;p++) m+=countedMin(c,p); return m/60; }
+  const {base,leave}=pc;
   if(leave){
     const lv=shiftByCode(leave);
     if(lv && typeof lv.worktime==='number') return (base ? activeMinutesOf(shiftByCode(base)) : lv.worktime)/60;
@@ -434,21 +502,21 @@ function _ovl(a1,a2,b1,b2){ return Math.max(0, Math.min(a2,b2)-Math.max(a1,b1));
 // ledig-PÅ-pass = klocktid minus jour (00:00–05:20 i respektive dygn); ren ledig = platt worktime på dagen.
 function countedMin(code, p){
   if(!code) return 0;
-  const {base,leave}=parseCell(code);
+  const pc=parseCell(code);
   const lo=p*1440, hi=lo+1440;
-  if(leave){
-    const lv=shiftByCode(leave);
-    if(!(lv && typeof lv.worktime==='number')) return 0;
-    if(!base) return p===0 ? lv.worktime : 0;
-    let tot=0;
-    intervalsFor(base,0).forEach(iv=>{
-      const clk=_ovl(iv[0],iv[1],lo,hi);
-      const jr =_ovl(iv[0],iv[1],lo,lo+JOUR_LEN);
-      tot += Math.max(0, clk-jr);
-    });
-    return tot;
+  // Ren ledig utan pass: platt worktime på startdagen (TJL utan worktime = 0).
+  if(!pc.base){ if(!pc.leave) return 0; const lv=shiftByCode(pc.leave);
+    if(!(lv && typeof lv.worktime==='number')) return 0; return p===0 ? lv.worktime : 0; }
+  const {worked,leave,leaveCode}=workedLeaveIvs(code,0);
+  let tot=0;
+  // Arbetad del: hela klocktiden (jour ingår i arbetstiden).
+  worked.forEach(iv=> tot += _ovl(iv[0],iv[1],lo,hi));
+  // Ledig del PÅ passet: klocktid minus jour, bara om ledig-koden har worktime (SJK/SEM/VAB/FP; TJL=0).
+  if(leaveCode){ const lv=shiftByCode(leaveCode);
+    if(lv && typeof lv.worktime==='number'){
+      leave.forEach(iv=>{ const clk=_ovl(iv[0],iv[1],lo,hi); const jr=_ovl(iv[0],iv[1],lo,lo+JOUR_LEN); tot += Math.max(0, clk-jr); });
+    }
   }
-  let tot=0; intervalsFor(base,0).forEach(iv=> tot += _ovl(iv[0],iv[1],lo,hi));
   return tot;
 }
 function weekHoursData(si){
@@ -564,7 +632,7 @@ function analyseMonth(year, m){
   // Per person: max 24 h i sträck + 36 h veckovila (avvikelser som LÄGGER TILL arbete kan bryta dessa).
   S.staff.forEach((name,si)=>{
     const ivs=[];
-    for(let k=0;k<W;k++){ const code=effectiveCell(dateAt(k),si); if(code) intervalsFor(code,k).forEach(iv=> ivs.push([iv[0],iv[1]])); }
+    for(let k=0;k<W;k++){ const code=effectiveCell(dateAt(k),si); if(code) presenceIvs(code,k).forEach(iv=> ivs.push([iv[0],iv[1]])); }
     if(!ivs.length) return;
     const blocks=mergeBlocks(ivs);
     blocks.forEach(b=>{ const len=(b[1]-b[0])/60; if(len>24+1e-6 && spanTouchesMonth(b[0],b[1])) issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h)`}); });
@@ -578,8 +646,8 @@ function analyseMonth(year, m){
   // Täckning dygnet runt + dubbelbemanning 07:30–16:00, per riktig dag i månaden.
   for(let k=PAD;k<PAD+days;k++){
     const cov=new Array(48).fill(0);
-    S.staff.forEach((n,si)=>{ const code=effectiveCell(dateAt(k),si); if(code) intervalsFor(code,k).forEach(iv=> mark(cov,iv,k*1440)); });
-    { const pk=k-1; S.staff.forEach((n,si)=>{ const code=effectiveCell(dateAt(pk),si); if(code) intervalsFor(code,pk).forEach(iv=> mark(cov,iv,k*1440)); }); }
+    S.staff.forEach((n,si)=>{ const code=effectiveCell(dateAt(k),si); if(code) presenceIvs(code,k).forEach(iv=> mark(cov,iv,k*1440)); });
+    { const pk=k-1; S.staff.forEach((n,si)=>{ const code=effectiveCell(dateAt(pk),si); if(code) presenceIvs(code,pk).forEach(iv=> mark(cov,iv,k*1440)); }); }
     const label=`${dateAt(k).getDate()} ${MONTHS_SV[m].toLowerCase()}`;
     if(cov.some(x=>x<1)) issues.push({bad:true,t:`${label}: täckning saknas dygnet runt`});
     let dbl=true; for(let i=15;i<32;i++) if(cov[i]<2) dbl=false;
