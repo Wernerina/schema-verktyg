@@ -662,19 +662,22 @@ function analyseMonth(year, m){
   const dateAt=(k)=>{ const d=new Date(year,m,1); d.setDate(1-PAD+k); return d; };
   const inMonth=(k)=>{ const d=dateAt(k); return d.getFullYear()===year && d.getMonth()===m; };
   const spanTouchesMonth=(a,b)=>{ const k0=Math.floor(a/1440), k1=Math.floor((b-1)/1440); for(let k=k0;k<=k1;k++){ if(k>=0&&k<W&&inMonth(k)) return true; } return false; };
+  // Datum för ett block (Kricko 2026-07-22): visa vilken dag/tid varningen gäller.
+  const monthDayLbl=(dt)=>`${dt.getDate()} ${MONTHS_SV[dt.getMonth()].toLowerCase()}`;
+  const fmtRealSpan=(a,bEnd)=>{ const k0=Math.floor(a/1440), k1=Math.floor((bEnd-1)/1440); const d0=dateAt(k0), d1=dateAt(k1); const t0=min2hm(((a%1440)+1440)%1440), t1=min2hm(((bEnd%1440)+1440)%1440); return (d0.getFullYear()===d1.getFullYear()&&d0.getMonth()===d1.getMonth()&&d0.getDate()===d1.getDate()) ? `${monthDayLbl(d0)} ${t0}–${t1}` : `${monthDayLbl(d0)} ${t0} → ${monthDayLbl(d1)} ${t1}`; };
   // Per person: max 24 h i sträck + 36 h veckovila (avvikelser som LÄGGER TILL arbete kan bryta dessa).
   S.staff.forEach((name,si)=>{
     const ivs=[];
     for(let k=0;k<W;k++){ const code=effectiveCell(dateAt(k),si); if(code) presenceIvs(code,k).forEach(iv=> ivs.push([iv[0],iv[1]])); }
     if(!ivs.length) return;
     const blocks=mergeBlocks(ivs);
-    blocks.forEach(b=>{ const len=(b[1]-b[0])/60; if(len>24+1e-6 && spanTouchesMonth(b[0],b[1])) issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h)`}); });
+    blocks.forEach(b=>{ const len=(b[1]-b[0])/60; if(len>24+1e-6 && spanTouchesMonth(b[0],b[1])) issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h) — ${fmtRealSpan(b[0],b[1])}`}); });
     const gaps=[]; let p=0; const TOT=W*1440;
     for(const b of blocks){ if(b[0]>p) gaps.push([p,b[0]]); p=Math.max(p,b[1]); }
     if(p<TOT) gaps.push([p,TOT]);
     const rlist=gaps.filter(g=>g[1]-g[0]>=36*60);
     if(!rlist.length){ issues.push({bad:true,t:`${name}: saknar 36 h sammanhängande ledigt (veckovila)`}); }
-    else for(let i=0;i<rlist.length-1;i++){ const s0=rlist[i][1], s1=rlist[i+1][0]; if(s1-s0>7*1440+1 && spanTouchesMonth(s0,s1)) issues.push({bad:true,t:`${name}: ${((s1-s0)/1440).toFixed(1)} dygn mellan två veckovilor (max 7)`}); }
+    else for(let i=0;i<rlist.length-1;i++){ const s0=rlist[i][1], s1=rlist[i+1][0]; if(s1-s0>7*1440+1 && spanTouchesMonth(s0,s1)) issues.push({bad:true,t:`${name}: ${((s1-s0)/1440).toFixed(1)} dygn mellan två veckovilor (max 7) — ${fmtRealSpan(s0,s1)}`}); }
   });
   // Täckning dygnet runt + dubbelbemanning 07:30–16:00, per riktig dag i månaden.
   for(let k=PAD;k<PAD+days;k++){
