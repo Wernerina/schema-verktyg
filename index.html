@@ -634,7 +634,11 @@ function monthGridHtml(year,m){
   let h='<div class="mgrid" style="overflow-x:auto"><table><thead>';
   // Grundschema-vecka (1–6) per dag — vilken vecka i 6-veckorsschemat en riktig dag hör till (Kricko 2026-07-22).
   h+='<tr><th class="namecell" style="font-weight:400">Grundschema-v.</th>';
-  for(let day=1;day<=days;day++){ const dt=new Date(year,m,day); const cd=cycleDayForDate(dt); const gw=cd>=0?('v'+(Math.floor(cd/7)+1)):'–'; const wi=(dt.getDay()+6)%7; h+=`<th class="${wi===6?'sun':wi===5?'sat':''}" style="font-size:11px;color:#2b3a55" title="Grundschemavecka ${gw}">${gw}</th>`; }
+  { let day=1; const gwOf=(dd)=>{ const cd=cycleDayForDate(new Date(year,m,dd)); return cd>=0?(Math.floor(cd/7)+1):null; };
+    while(day<=days){ const gw=gwOf(day); let span=1; while(day+span<=days && gwOf(day+span)===gw) span++;
+      const lbl=(gw!=null)?('v'+gw):'–';
+      h+=`<th colspan="${span}" style="font-size:12px;font-weight:600;color:#2b3a55;text-align:center;border-right:1px solid var(--line)" title="Grundschemavecka ${lbl}">${lbl}</th>`;
+      day+=span; } }
   h+='</tr>';
   h+='<tr><th class="namecell">Personal</th>';
   for(let day=1;day<=days;day++){ const dt=new Date(year,m,day); const wi=(dt.getDay()+6)%7; const iso=isoDate(dt);
