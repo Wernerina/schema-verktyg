@@ -631,7 +631,12 @@ function limClass(val,max,over,near){ if(val>=max) return over; if(val>=0.9*max)
 // Redigerbar månadsgrid (personal × riktiga dagar) — klick sätter avvikelse; klarmarkerade dagar visas låsta.
 function monthGridHtml(year,m){
   const days=daysInMonth(year,m);
-  let h='<div class="mgrid" style="overflow-x:auto"><table><thead><tr><th class="namecell">Personal</th>';
+  let h='<div class="mgrid" style="overflow-x:auto"><table><thead>';
+  // Grundschema-vecka (1–6) per dag — vilken vecka i 6-veckorsschemat en riktig dag hör till (Kricko 2026-07-22).
+  h+='<tr><th class="namecell" style="font-weight:400">Grundschema-v.</th>';
+  for(let day=1;day<=days;day++){ const dt=new Date(year,m,day); const cd=cycleDayForDate(dt); const gw=cd>=0?('v'+(Math.floor(cd/7)+1)):'–'; const wi=(dt.getDay()+6)%7; h+=`<th class="${wi===6?'sun':wi===5?'sat':''}" style="font-size:11px;color:#2b3a55" title="Grundschemavecka ${gw}">${gw}</th>`; }
+  h+='</tr>';
+  h+='<tr><th class="namecell">Personal</th>';
   for(let day=1;day<=days;day++){ const dt=new Date(year,m,day); const wi=(dt.getDay()+6)%7; const iso=isoDate(dt);
     h+=`<th class="${wi===6?'sun':wi===5?'sat':''}">${day}<br><span style="font-weight:400">${DAYS[wi]}</span>${isLocked(iso)?'<br><span class="lockbadge">🔒</span>':''}</th>`; }
   h+='</tr></thead><tbody>';
