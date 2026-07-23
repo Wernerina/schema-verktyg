@@ -681,13 +681,12 @@ function analyseMonth(year, m){
     if(!ivs.length) return;
     const blocks=mergeBlocks(ivs);
     blocks.forEach(b=>{ const len=(b[1]-b[0])/60; if(len>24+1e-6 && spanTouchesMonth(b[0],b[1])) issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h) — ${fmtRealSpan(b[0],b[1])}`}); });
-    // Veckovila: minst 36 h sammanhängande ledigt i VARJE 7-dagarsfönster.
-    // Kollas över ett BREDARE fönster (±8 dygn runt månaden) så att en vila som ligger strax
-    // UTANFÖR månadskanten fångas — annars kapar 3-dygnspaddingen vilan och ger falsklarm.
-    // Arbetsspannet FÖRE första vilan, MELLAN vilor och EFTER sista vilan måste alla vara ≤7 dygn.
-    // (Tidigare: bara MELLAN två vilor i det smala fönstret → en ensam vila eller en sträcka mot
-    //  kanten gav INGEN varning fastän veckovilan saknades. Rättat 2026-07-23, Kricko.)
-    const VP=8; // täck hela månaden + 8 dygn åt varje håll (fullt 7-dygns bakåtsvep)
+    // Veckovila: en sammanhängande 36 h-vila måste rymmas INOM varje 7-dygnsperiod (löpande fönster).
+    // Det räcker INTE att ha vila FÖRE och EFTER en lång arbetssträcka — 36h-vilan ska ligga inne i
+    // 7-dygnsfönstret (Kricko/Kommunal 2026-07-23: "det ska vara inom 7 dagar"). Vi glider ett
+    // 7-dygnsfönster över månaden och flaggar varje fönster som saknar en HELT inrymd 36h-vila.
+    // Vilorna hämtas ur ett bredare fönster (±8 dygn) så att en vila strax utanför månadskanten räknas.
+    const VP=8, W7=7*1440, STEP=60; // 7-dygnsfönster, glidsteg 1 h
     const vivs=[];
     for(let k=PAD-VP;k<=PAD+days-1+VP;k++){ const code=effectiveCell(dateAt(k),si); if(code) presenceIvs(code,k).forEach(iv=> vivs.push([iv[0],iv[1]])); }
     if(vivs.length){
@@ -699,10 +698,17 @@ function analyseMonth(year, m){
       const vrest=vgaps.filter(g=>g[1]-g[0]>=36*60);
       if(!vrest.length){ issues.push({bad:true,t:`${name}: saknar 36 h sammanhängande ledigt (veckovila)`}); }
       else {
-        const spans=[[lo, vrest[0][0]]];
-        for(let i=0;i<vrest.length-1;i++) spans.push([vrest[i][1], vrest[i+1][0]]);
-        spans.push([vrest[vrest.length-1][1], hi]);
-        spans.forEach(([s0,s1])=>{ if(s1-s0>7*1440+1 && spanTouchesMonth(s0,s1)) issues.push({bad:true,t:`${name}: ${((s1-s0)/1440).toFixed(1)} dygn utan veckovila (max 7) — ${fmtRealSpan(s0,s1)}`}); });
+        // Glid 7-dygnsfönstret; en löpande serie fönster utan inrymd 36h-vila = ETT brott (rapporteras en gång).
+        let runStart=null;
+        const flagRun=(a)=>{ issues.push({bad:true,t:`${name}: ingen sammanhängande 36 h-vila under 7-dygnsperioden ${fmtRealSpan(a, a+W7)}`}); };
+        for(let t=lo; t<=hi-W7; t+=STEP){
+          // täckt = någon vila har ≥36 h SAMMANHÄNGANDE inne i fönstret (överlappet räcker; en lång
+          // vila som sträcker sig ut ur fönstret räknas för sin del inne i fönstret).
+          const covered = vrest.some(r=> Math.min(r[1],t+W7) - Math.max(r[0],t) >= 36*60);
+          if(!covered && spanTouchesMonth(t, t+W7)){ if(runStart==null) runStart=t; }
+          else { if(runStart!=null){ flagRun(runStart); runStart=null; } }
+        }
+        if(runStart!=null) flagRun(runStart);
       }
     }
   });
