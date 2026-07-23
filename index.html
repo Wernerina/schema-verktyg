@@ -681,12 +681,30 @@ function analyseMonth(year, m){
     if(!ivs.length) return;
     const blocks=mergeBlocks(ivs);
     blocks.forEach(b=>{ const len=(b[1]-b[0])/60; if(len>24+1e-6 && spanTouchesMonth(b[0],b[1])) issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h) — ${fmtRealSpan(b[0],b[1])}`}); });
-    const gaps=[]; let p=0; const TOT=W*1440;
-    for(const b of blocks){ if(b[0]>p) gaps.push([p,b[0]]); p=Math.max(p,b[1]); }
-    if(p<TOT) gaps.push([p,TOT]);
-    const rlist=gaps.filter(g=>g[1]-g[0]>=36*60);
-    if(!rlist.length){ issues.push({bad:true,t:`${name}: saknar 36 h sammanhängande ledigt (veckovila)`}); }
-    else for(let i=0;i<rlist.length-1;i++){ const s0=rlist[i][1], s1=rlist[i+1][0]; if(s1-s0>7*1440+1 && spanTouchesMonth(s0,s1)) issues.push({bad:true,t:`${name}: ${((s1-s0)/1440).toFixed(1)} dygn mellan två veckovilor (max 7) — ${fmtRealSpan(s0,s1)}`}); }
+    // Veckovila: minst 36 h sammanhängande ledigt i VARJE 7-dagarsfönster.
+    // Kollas över ett BREDARE fönster (±8 dygn runt månaden) så att en vila som ligger strax
+    // UTANFÖR månadskanten fångas — annars kapar 3-dygnspaddingen vilan och ger falsklarm.
+    // Arbetsspannet FÖRE första vilan, MELLAN vilor och EFTER sista vilan måste alla vara ≤7 dygn.
+    // (Tidigare: bara MELLAN två vilor i det smala fönstret → en ensam vila eller en sträcka mot
+    //  kanten gav INGEN varning fastän veckovilan saknades. Rättat 2026-07-23, Kricko.)
+    const VP=8; // täck hela månaden + 8 dygn åt varje håll (fullt 7-dygns bakåtsvep)
+    const vivs=[];
+    for(let k=PAD-VP;k<=PAD+days-1+VP;k++){ const code=effectiveCell(dateAt(k),si); if(code) presenceIvs(code,k).forEach(iv=> vivs.push([iv[0],iv[1]])); }
+    if(vivs.length){
+      const vblocks=mergeBlocks(vivs);
+      const lo=(PAD-VP)*1440, hi=(PAD+days+VP)*1440;
+      const vgaps=[]; let vp=lo;
+      for(const b of vblocks){ if(b[0]>vp) vgaps.push([vp,b[0]]); vp=Math.max(vp,b[1]); }
+      if(vp<hi) vgaps.push([vp,hi]);
+      const vrest=vgaps.filter(g=>g[1]-g[0]>=36*60);
+      if(!vrest.length){ issues.push({bad:true,t:`${name}: saknar 36 h sammanhängande ledigt (veckovila)`}); }
+      else {
+        const spans=[[lo, vrest[0][0]]];
+        for(let i=0;i<vrest.length-1;i++) spans.push([vrest[i][1], vrest[i+1][0]]);
+        spans.push([vrest[vrest.length-1][1], hi]);
+        spans.forEach(([s0,s1])=>{ if(s1-s0>7*1440+1 && spanTouchesMonth(s0,s1)) issues.push({bad:true,t:`${name}: ${((s1-s0)/1440).toFixed(1)} dygn utan veckovila (max 7) — ${fmtRealSpan(s0,s1)}`}); });
+      }
+    }
   });
   // Täckning dygnet runt + dubbelbemanning 07:30–16:00, per riktig dag i månaden.
   for(let k=PAD;k<PAD+days;k++){
