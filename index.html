@@ -681,12 +681,13 @@ function analyseMonth(year, m){
     if(!ivs.length) return;
     const blocks=mergeBlocks(ivs);
     blocks.forEach(b=>{ const len=(b[1]-b[0])/60; if(len>24+1e-6 && spanTouchesMonth(b[0],b[1])) issues.push({bad:true,t:`${name}: arbetar ${len.toFixed(1)} h i sträck (max 24 h) — ${fmtRealSpan(b[0],b[1])}`}); });
-    // Veckovila: en sammanhängande 36 h-vila måste rymmas INOM varje 7-dygnsperiod (löpande fönster).
-    // Det räcker INTE att ha vila FÖRE och EFTER en lång arbetssträcka — 36h-vilan ska ligga inne i
-    // 7-dygnsfönstret (Kricko/Kommunal 2026-07-23: "det ska vara inom 7 dagar"). Vi glider ett
-    // 7-dygnsfönster över månaden och flaggar varje fönster som saknar en HELT inrymd 36h-vila.
-    // Vilorna hämtas ur ett bredare fönster (±8 dygn) så att en vila strax utanför månadskanten räknas.
-    const VP=8, W7=7*1440, STEP=60; // 7-dygnsfönster, glidsteg 1 h
+    // Veckovila: 7-dygnsperioden räknas FRÅN varje påbörjat arbetspass, 7 dygn framåt, och måste
+    // rymma minst 36 h SAMMANHÄNGANDE vila (Kricko/Kommunal 2026-07-23: "man räknar från varje
+    // påbörjat pass och 7 dagar framåt"). Vi kollar alltså [passets start, +7 dygn] för varje pass —
+    // INTE ett löpande fönster med godtycklig start (det gav falsklarm på fönster som inte börjar vid
+    // ett pass). Vilorna hämtas ur ett bredare fönster (±8 dygn) så att en vila strax utanför
+    // månadskanten räknas med.
+    const VP=8, W7=7*1440; // rest-fönster ±8 dygn; 7-dygnsperiod = 7*1440 min
     const vivs=[];
     for(let k=PAD-VP;k<=PAD+days-1+VP;k++){ const code=effectiveCell(dateAt(k),si); if(code) presenceIvs(code,k).forEach(iv=> vivs.push([iv[0],iv[1]])); }
     if(vivs.length){
@@ -698,17 +699,16 @@ function analyseMonth(year, m){
       const vrest=vgaps.filter(g=>g[1]-g[0]>=36*60);
       if(!vrest.length){ issues.push({bad:true,t:`${name}: saknar 36 h sammanhängande ledigt (veckovila)`}); }
       else {
-        // Glid 7-dygnsfönstret; en löpande serie fönster utan inrymd 36h-vila = ETT brott (rapporteras en gång).
-        let runStart=null;
-        const flagRun=(a)=>{ issues.push({bad:true,t:`${name}: ingen sammanhängande 36 h-vila under 7-dygnsperioden ${fmtRealSpan(a, a+W7)}`}); };
-        for(let t=lo; t<=hi-W7; t+=STEP){
-          // täckt = någon vila har ≥36 h SAMMANHÄNGANDE inne i fönstret (överlappet räcker; en lång
-          // vila som sträcker sig ut ur fönstret räknas för sin del inne i fönstret).
-          const covered = vrest.some(r=> Math.min(r[1],t+W7) - Math.max(r[0],t) >= 36*60);
-          if(!covered && spanTouchesMonth(t, t+W7)){ if(runStart==null) runStart=t; }
-          else { if(runStart!=null){ flagRun(runStart); runStart=null; } }
-        }
-        if(runStart!=null) flagRun(runStart);
+        // 7-dygnsperioden räknas FRÅN varje påbörjat arbetspass, 7 dygn framåt (Kricko 2026-07-23:
+        // "man räknar från varje påbörjat pass och 7 dagar framåt"). För varje arbetsblocks START måste
+        // [start, start+7 dygn] rymma minst 36 h SAMMANHÄNGANDE vila. Blockets start är den bindande
+        // punkten — ett pass senare i samma oavbrutna block ser mer tid framåt, så det räcker att kolla
+        // blockstarterna. Täckt = någon vila överlappar fönstret med ≥36 h (en lång vila som sträcker
+        // sig ut ur fönstret räknas för sin del inne i fönstret).
+        vblocks.forEach(b=>{ const s=b[0];
+          const covered = vrest.some(r=> Math.min(r[1],s+W7) - Math.max(r[0],s) >= 36*60);
+          if(!covered && spanTouchesMonth(s, s+W7)) issues.push({bad:true,t:`${name}: ingen sammanhängande 36 h-vila under 7-dygnsperioden ${fmtRealSpan(s, s+W7)} (räknat från passets start)`});
+        });
       }
     }
   });
