@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Att göra</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1d2733; --muted:#7a8694;
+    --line:#e6e9ee; --accent:#3a7afe; --accent-soft:#eaf1ff;
+    --done:#9aa6b2; --today:#fff3d6; --today-line:#f0c657;
+    --over:#fdecec; --over-ink:#c0392b; --shadow:0 1px 3px rgba(20,30,50,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12161c; --card:#1a2029; --ink:#e7ecf2; --muted:#8b97a6;
+      --line:#28303b; --accent:#5b8cff; --accent-soft:#1e2a44;
+      --done:#5b6672; --today:#2c2a1a; --today-line:#5a4e22;
+      --over:#331e1e; --over-ink:#ff8a80; --shadow:0 1px 3px rgba(0,0,0,.3);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:18px}
+  .wrap{max-width:640px;margin:0 auto}
+  h1{font-size:22px;margin:4px 0 2px;font-weight:650;letter-spacing:-.2px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);padding:14px;margin-bottom:16px}
+  /* add row */
+  form{display:flex;flex-wrap:wrap;gap:8px}
+  input[type=text],input[type=date]{flex:1 1 auto;min-width:0;background:transparent;
+    color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;
+    font-size:15.5px}
+  input[type=text]{flex:1 1 200px}
+  input[type=date]{flex:0 1 160px}
+  input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  button.add{background:var(--accent);color:#fff;border:0;border-radius:10px;
+    padding:11px 18px;font-size:15.5px;font-weight:600;cursor:pointer;flex:0 0 auto}
+  button.add:active{transform:translateY(1px)}
+  /* calendar */
+  .calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .calhead b{font-size:16px;font-weight:600}
+  .nav{display:flex;gap:6px}
+  .nav button,.today-btn{background:transparent;border:1px solid var(--line);color:var(--ink);
+    border-radius:9px;padding:6px 11px;font-size:14px;cursor:pointer}
+  .nav button:hover,.today-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .dow{color:var(--muted);font-size:11.5px;text-align:center;padding:2px 0;text-transform:uppercase;letter-spacing:.4px}
+  .day{position:relative;aspect-ratio:1/1;border:1px solid transparent;border-radius:9px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-size:14px;cursor:pointer;color:var(--ink)}
+  .day.pad{color:var(--muted);opacity:.35;cursor:default}
+  .day:not(.pad):hover{background:var(--accent-soft)}
+  .day.today{background:var(--today);border-color:var(--today-line)}
+  .day.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft) inset}
+  .dots{display:flex;gap:3px;margin-top:3px;height:6px}
+  .dot{width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  .dot.over{background:var(--over-ink)}
+  .dot.done{background:var(--done)}
+  /* list */
+  .listhead{display:flex;align-items:baseline;justify-content:space-between;margin:2px 2px 10px}
+  .listhead h2{font-size:15px;margin:0;font-weight:600}
+  .listhead .clr{color:var(--muted);font-size:13px;background:none;border:0;cursor:pointer}
+  .listhead .clr:hover{color:var(--accent)}
+  ul{list-style:none;margin:0;padding:0}
+  li.item{display:flex;align-items:center;gap:12px;padding:11px 6px;border-bottom:1px solid var(--line)}
+  li.item:last-child{border-bottom:0}
+  .check{flex:0 0 auto;width:22px;height:22px;border:2px solid var(--line);border-radius:7px;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .check:hover{border-color:var(--accent)}
+  .check.on{background:var(--accent);border-color:var(--accent)}
+  .check.on::after{content:"✓";color:#fff;font-size:14px;font-weight:700}
+  .body{flex:1 1 auto;min-width:0}
+  .ttl{font-size:15.5px;word-break:break-word}
+  .when{font-size:12.5px;color:var(--muted);margin-top:1px}
+  .when.over{color:var(--over-ink);font-weight:600}
+  .when.today{color:#b9880f;font-weight:600}
+  li.done .ttl{text-decoration:line-through;color:var(--done)}
+  li.done .when{color:var(--done)}
+  .del{flex:0 0 auto;background:none;border:0;color:var(--muted);font-size:18px;
+    cursor:pointer;line-height:1;padding:4px 6px;border-radius:7px;opacity:.55}
+  .del:hover{opacity:1;color:var(--over-ink);background:var(--over)}
+  .empty{color:var(--muted);text-align:center;padding:26px 10px;font-size:14.5px}
+  .foot{color:var(--muted);font-size:12px;text-align:center;margin:6px 0 2px}
+  .tag{display:inline-block;font-size:11px;color:var(--accent);background:var(--accent-soft);
+    border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Att göra</h1>
+  <p class="sub">Lägg till en sak, sätt ett datum, bocka av när den är klar. Allt sparas i din webbläsare — inget konto, funkar offline.</p>
+
+  <div class="card">
+    <form id="add">
+      <input type="text" id="title" placeholder="Vad ska göras?" autocomplete="off" required>
+      <input type="date" id="date" required>
+      <button class="add" type="submit">Lägg till</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="calhead">
+      <b id="monthlabel"></b>
+      <div class="nav">
+        <button type="button" id="prev" aria-label="Föregående månad">‹</button>
+        <button type="button" class="today-btn" id="gotoday">Idag</button>
+        <button type="button" id="next" aria-label="Nästa månad">›</button>
+      </div>
+    </div>
+    <div class="grid" id="dow"></div>
+    <div class="grid" id="cal"></div>
+  </div>
+
+  <div class="card">
+    <div class="listhead">
+      <h2 id="listtitle">Allt framöver</h2>
+      <button class="clr" id="showall" style="display:none">Visa allt</button>
+    </div>
+    <ul id="list"></ul>
+    <div class="empty" id="empty" style="display:none">Inget här än. Lägg till något ovanför. 🌱</div>
+  </div>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var KEY="attgora.v1";
+  var DOW=["Mån","Tis","Ons","Tor","Fre","Lör","Sön"];
+  var MON=["januari","februari","mars","april","maj","juni","juli","augusti","september","oktober","november","december"];
+
+  var items=load();
+  var viewY, viewM;           // calendar month being shown
+  var filterDay=null;         // "YYYY-MM-DD" or null = show all upcoming
+
+  var today=new Date(); today.setHours(0,0,0,0);
+  viewY=today.getFullYear(); viewM=today.getMonth();
+
+  function load(){ try{ return JSON.parse(localStorage.getItem(KEY))||[]; }catch(e){ return []; } }
+  function save(){ localStorage.setItem(KEY, JSON.stringify(items)); }
+  function uid(){ return Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36); }
+  function iso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  function parse(s){ var p=s.split("-"); return new Date(+p[0],+p[1]-1,+p[2]); }
+  var TODAY_ISO=iso(today);
+
+  // ---- add ----
+  document.getElementById("add").addEventListener("submit",function(e){
+    e.preventDefault();
+    var t=document.getElementById("title").value.trim();
+    var d=document.getElementById("date").value;
+    if(!t||!d) return;
+    items.push({id:uid(),title:t,date:d,done:false});
+    save();
+    document.getElementById("title").value="";
+    // jump calendar to the month of the thing you just added
+    var pd=parse(d); viewY=pd.getFullYear(); viewM=pd.getMonth();
+    render();
+    document.getElementById("title").focus();
+  });
+
+  // default date field to today
+  document.getElementById("date").value=TODAY_ISO;
+
+  // ---- calendar nav ----
+  document.getElementById("prev").onclick=function(){ viewM--; if(viewM<0){viewM=11;viewY--;} render(); };
+  document.getElementById("next").onclick=function(){ viewM++; if(viewM>11){viewM=0;viewY++;} render(); };
+  document.getElementById("gotoday").onclick=function(){ viewY=today.getFullYear(); viewM=today.getMonth(); filterDay=null; render(); };
+  document.getElementById("showall").onclick=function(){ filterDay=null; render(); };
+
+  // ---- render ----
+  function statusOf(it){
+    if(it.done) return "done";
+    if(it.date < TODAY_ISO) return "over";
+    if(it.date === TODAY_ISO) return "today";
+    return "up";
+  }
+
+  function render(){
+    // dow header
+    var dowEl=document.getElementById("dow");
+    if(!dowEl.childNodes.length){ DOW.forEach(function(n){ var c=document.createElement("div"); c.className="dow"; c.textContent=n; dowEl.appendChild(c); }); }
+
+    document.getElementById("monthlabel").textContent=MON[viewM]+" "+viewY;
+
+    // group items by date for dots
+    var byDay={};
+    items.forEach(function(it){ (byDay[it.date]=byDay[it.date]||[]).push(it); });
+
+    // build month grid (Mon-first)
+    var cal=document.getElementById("cal"); cal.innerHTML="";
+    var first=new Date(viewY,viewM,1);
+    var startPad=(first.getDay()+6)%7;               // Mon=0
+    var daysInMonth=new Date(viewY,viewM+1,0).getDate();
+    var prevDays=new Date(viewY,viewM,0).getDate();
+
+    for(var i=0;i<startPad;i++){ cal.appendChild(dayCell(prevDays-startPad+1+i,true,null)); }
+    for(var d=1;d<=daysInMonth;d++){
+      var ds=viewY+"-"+String(viewM+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+      cal.appendChild(dayCell(d,false,ds,byDay[ds]));
+    }
+    var total=startPad+daysInMonth; var tail=(7-(total%7))%7;
+    for(var j=1;j<=tail;j++){ cal.appendChild(dayCell(j,true,null)); }
+
+    renderList(byDay);
+    document.getElementById("foot").textContent = items.length ? (openCount()+" kvar · "+doneCount()+" klara") : "";
+  }
+
+  function dayCell(num,pad,ds,dayItems){
+    var el=document.createElement("div");
+    el.className="day"+(pad?" pad":"");
+    if(!pad){
+      if(ds===TODAY_ISO) el.className+=" today";
+      if(ds===filterDay) el.className+=" sel";
+      el.onclick=function(){ filterDay=(filterDay===ds)?null:ds; render(); };
+    }
+    var n=document.createElement("div"); n.textContent=num; el.appendChild(n);
+    var dots=document.createElement("div"); dots.className="dots";
+    if(dayItems&&dayItems.length){
+      var kinds={};
+      dayItems.forEach(function(it){ kinds[statusOf(it)]=true; });
+      // show up to 3 dots: overdue/today, upcoming, done
+      if(kinds.over) dots.appendChild(mkdot("over"));
+      if(kinds.today) dots.appendChild(mkdot(""));
+      if(kinds.up) dots.appendChild(mkdot(""));
+      if(kinds.done && dots.childNodes.length<3) dots.appendChild(mkdot("done"));
+    }
+    el.appendChild(dots);
+    return el;
+  }
+  function mkdot(cls){ var d=document.createElement("span"); d.className="dot"+(cls?" "+cls:""); return d; }
+
+  function openCount(){ return items.filter(function(i){return !i.done;}).length; }
+  function doneCount(){ return items.filter(function(i){return i.done;}).length; }
+
+  function renderList(byDay){
+    var list=document.getElementById("list"); list.innerHTML="";
+    var title=document.getElementById("listtitle");
+    var showall=document.getElementById("showall");
+
+    var shown;
+    if(filterDay){
+      shown=items.filter(function(i){return i.date===filterDay;});
+      var fd=parse(filterDay);
+      title.textContent=fd.getDate()+" "+MON[fd.getMonth()];
+      showall.style.display="inline";
+    } else {
+      shown=items.slice();
+      title.textContent="Allt framöver";
+      showall.style.display="none";
+    }
+
+    // sort: open first by date, then done last by date
+    shown.sort(function(a,b){
+      if(a.done!==b.done) return a.done?1:-1;
+      return a.date<b.date?-1:a.date>b.date?1:0;
+    });
+
+    document.getElementById("empty").style.display = shown.length? "none":"block";
+
+    shown.forEach(function(it){
+      var li=document.createElement("li");
+      li.className="item"+(it.done?" done":"");
+
+      var chk=document.createElement("div");
+      chk.className="check"+(it.done?" on":"");
+      chk.setAttribute("role","checkbox");
+      chk.setAttribute("aria-checked",it.done?"true":"false");
+      chk.onclick=function(){ it.done=!it.done; save(); render(); };
+      li.appendChild(chk);
+
+      var body=document.createElement("div"); body.className="body";
+      var ttl=document.createElement("div"); ttl.className="ttl"; ttl.textContent=it.title;
+      body.appendChild(ttl);
+
+      var st=statusOf(it);
+      var when=document.createElement("div");
+      when.className="when"+(st==="over"?" over":st==="today"?" today":"");
+      when.textContent=friendly(it.date,st);
+      body.appendChild(when);
+      li.appendChild(body);
+
+      var del=document.createElement("button");
+      del.className="del"; del.textContent="×"; del.title="Ta bort";
+      del.onclick=function(){
+        items=items.filter(function(x){return x.id!==it.id;});
+        save(); render();
+      };
+      li.appendChild(del);
+
+      list.appendChild(li);
+    });
+  }
+
+  function friendly(ds,st){
+    var d=parse(ds);
+    var label=d.getDate()+" "+MON[d.getMonth()]+(d.getFullYear()!==today.getFullYear()?" "+d.getFullYear():"");
+    if(st==="today") return "Idag · "+label;
+    if(st==="over"){
+      var days=Math.round((today-d)/86400000);
+      return (days===1?"Igår":days+" dagar sen")+" · "+label;
+    }
+    var ahead=Math.round((d-today)/86400000);
+    if(ahead===1) return "Imorgon · "+label;
+    if(ahead<=7) return "Om "+ahead+" dagar · "+label;
+    return label;
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
