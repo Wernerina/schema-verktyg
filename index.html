@@ -138,6 +138,23 @@
     <input type="file" id="importFile" style="display:none" accept="application/json">
     <span class="muted small" id="savedNote"></span>
   </div>
+
+  <div class="panel no-print" id="syncPanel">
+    <h2>🔗 Synk mellan enheter</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <span class="muted small">Din synk-kod:</span>
+      <code id="schCode" style="user-select:all;word-break:break-all">…</code>
+      <button onclick="schCopyCode()">Kopiera kod</button>
+      <button onclick="schCopyLink()">Kopiera synk-länk</button>
+      <span class="muted small" id="schStatus"></span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px">
+      <span class="muted small">Annan enhet:</span>
+      <input type="text" id="schJoin" placeholder="klistra in synk-koden" style="min-width:180px">
+      <button onclick="schJoin()">Anslut</button>
+    </div>
+    <p class="muted small" style="margin-top:8px">Enklast: tryck <b>Kopiera synk-länk</b> och öppna den länken på din andra enhet — då dyker samma schema upp. Ändringar hämtas när du växlar till den andra fliken. Säkerhetskopian (Exportera/Importera) fungerar precis som förut.</p>
+  </div>
 </div>
 
 <script>
@@ -858,6 +875,49 @@ function resetAll(){ if(confirm("Börja om från grundschemat? (din sparade vers
 
 // autosave on changes
 const _origRender=render; render=function(){ _origRender(); localStorage.setItem(LS_KEY+"_auto", JSON.stringify(S)); };
+
+// ---------- Cross-device sync (capability-keyed; reuses the /todo/ JSON store) ----------
+(function(){
+  var API="https://187-77-90-218.sslip.io/todo/api/";
+  var SIDKEY="kricko_schema_syncid", pushT=null, syncId=null;
+  function genId(){var a=new Uint8Array(16);crypto.getRandomValues(a);return Array.from(a).map(function(b){return b.toString(16).padStart(2,"0");}).join("");}
+  function validId(s){return /^[a-f0-9]{32}$/.test(s);}
+  function status(t){var e=document.getElementById("schStatus"); if(e)e.textContent=t;}
+  function copyTxt(t){ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){status("kopierad ✓");},function(){}); }
+    else{ var ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");status("kopierad ✓");}catch(e){} document.body.removeChild(ta); } }
+  function initId(){
+    var h=(location.hash||"").replace(/^#/,"").trim().toLowerCase();
+    if(validId(h)){ syncId=h; localStorage.setItem(SIDKEY,syncId); }
+    else { syncId=localStorage.getItem(SIDKEY); if(!validId(syncId)){ syncId=genId(); localStorage.setItem(SIDKEY,syncId); } }
+    try{ history.replaceState(null,"","#"+syncId); }catch(e){}
+    var c=document.getElementById("schCode"); if(c) c.textContent=syncId;
+  }
+  function push(now){ clearTimeout(pushT);
+    var go=function(){ status("synkar…");
+      fetch(API+syncId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:S})})
+      .then(function(r){ status(r.ok?"synkad ✓":"offline – sparat lokalt"); })
+      .catch(function(){ status("offline – sparat lokalt"); }); };
+    if(now) go(); else pushT=setTimeout(go,800);
+  }
+  function pull(){ status("synkar…");
+    fetch(API+syncId,{cache:"no-store"}).then(function(r){ return r.ok?r.json():Promise.reject(); })
+    .then(function(d){ if(d&&d.schema){ S=d.schema; localStorage.setItem(LS_KEY, JSON.stringify(S)); render(); status("synkad ✓"); }
+      else { push(true); } })
+    .catch(function(){ status("offline – sparat lokalt"); });
+  }
+  window.schCopyCode=function(){ copyTxt(syncId); };
+  window.schCopyLink=function(){ copyTxt(location.origin+location.pathname+"#"+syncId); };
+  window.schJoin=function(){ var v=(document.getElementById("schJoin").value||"").trim().toLowerCase();
+    if(!validId(v)){ alert("Koden ska vara 32 tecken (a–f och 0–9)."); return; }
+    syncId=v; localStorage.setItem(SIDKEY,syncId); document.getElementById("schCode").textContent=syncId;
+    try{ history.replaceState(null,"","#"+syncId); }catch(e){} document.getElementById("schJoin").value=""; pull();
+  };
+  var _save=save; save=function(){ _save(); push(true); };
+  var _render=render; render=function(){ _render(); push(false); };
+  document.addEventListener("visibilitychange",function(){ if(!document.hidden) pull(); });
+  initId(); pull();
+})();
+
 render();
 </script>
 </body>
