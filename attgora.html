@@ -10,6 +10,7 @@
     --line:#e6e9ee; --accent:#3a7afe; --accent-soft:#eaf1ff;
     --done:#9aa6b2; --today:#fff3d6; --today-line:#f0c657;
     --over:#fdecec; --over-ink:#c0392b; --shadow:0 1px 3px rgba(20,30,50,.06);
+    --ok:#1f9d55;
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -17,6 +18,7 @@
       --line:#28303b; --accent:#5b8cff; --accent-soft:#1e2a44;
       --done:#5b6672; --today:#2c2a1a; --today-line:#5a4e22;
       --over:#331e1e; --over-ink:#ff8a80; --shadow:0 1px 3px rgba(0,0,0,.3);
+      --ok:#54c98a;
     }
   }
   *{box-sizing:border-box}
@@ -28,18 +30,15 @@
   .sub{color:var(--muted);font-size:13.5px;margin:0 0 18px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
     box-shadow:var(--shadow);padding:14px;margin-bottom:16px}
-  /* add row */
-  form{display:flex;flex-wrap:wrap;gap:8px}
+  form.add{display:flex;flex-wrap:wrap;gap:8px}
   input[type=text],input[type=date]{flex:1 1 auto;min-width:0;background:transparent;
-    color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;
-    font-size:15.5px}
+    color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:15.5px}
   input[type=text]{flex:1 1 200px}
   input[type=date]{flex:0 1 160px}
   input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
   button.add{background:var(--accent);color:#fff;border:0;border-radius:10px;
     padding:11px 18px;font-size:15.5px;font-weight:600;cursor:pointer;flex:0 0 auto}
   button.add:active{transform:translateY(1px)}
-  /* calendar */
   .calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
   .calhead b{font-size:16px;font-weight:600}
   .nav{display:flex;gap:6px}
@@ -49,8 +48,7 @@
   .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
   .dow{color:var(--muted);font-size:11.5px;text-align:center;padding:2px 0;text-transform:uppercase;letter-spacing:.4px}
   .day{position:relative;aspect-ratio:1/1;border:1px solid transparent;border-radius:9px;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    font-size:14px;cursor:pointer;color:var(--ink)}
+    display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;cursor:pointer;color:var(--ink)}
   .day.pad{color:var(--muted);opacity:.35;cursor:default}
   .day:not(.pad):hover{background:var(--accent-soft)}
   .day.today{background:var(--today);border-color:var(--today-line)}
@@ -59,7 +57,6 @@
   .dot{width:5px;height:5px;border-radius:50%;background:var(--accent)}
   .dot.over{background:var(--over-ink)}
   .dot.done{background:var(--done)}
-  /* list */
   .listhead{display:flex;align-items:baseline;justify-content:space-between;margin:2px 2px 10px}
   .listhead h2{font-size:15px;margin:0;font-weight:600}
   .listhead .clr{color:var(--muted);font-size:13px;background:none;border:0;cursor:pointer}
@@ -79,22 +76,55 @@
   .when.today{color:#b9880f;font-weight:600}
   li.done .ttl{text-decoration:line-through;color:var(--done)}
   li.done .when{color:var(--done)}
-  .del{flex:0 0 auto;background:none;border:0;color:var(--muted);font-size:18px;
-    cursor:pointer;line-height:1;padding:4px 6px;border-radius:7px;opacity:.55}
+  .del{flex:0 0 auto;background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer;
+    line-height:1;padding:4px 6px;border-radius:7px;opacity:.55}
   .del:hover{opacity:1;color:var(--over-ink);background:var(--over)}
   .empty{color:var(--muted);text-align:center;padding:26px 10px;font-size:14.5px}
   .foot{color:var(--muted);font-size:12px;text-align:center;margin:6px 0 2px}
-  .tag{display:inline-block;font-size:11px;color:var(--accent);background:var(--accent-soft);
-    border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+  /* sync bar */
+  .syncbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .syncbar .lbl{font-size:13px;color:var(--muted)}
+  .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:var(--accent-soft);
+    color:var(--accent);border-radius:8px;padding:6px 10px;user-select:all;word-break:break-all;flex:1 1 auto;min-width:120px}
+  .syncbar button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:9px;
+    padding:6px 11px;font-size:13px;cursor:pointer}
+  .syncbar button:hover{border-color:var(--accent);color:var(--accent)}
+  .status{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+  .status .d{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+  .status.ok .d{background:var(--ok)} .status.ok{color:var(--ok)}
+  .status.off .d{background:var(--over-ink)} .status.off{color:var(--over-ink)}
+  details.join{margin-top:10px}
+  details.join summary{font-size:13px;color:var(--accent);cursor:pointer}
+  details.join .row{display:flex;gap:8px;margin-top:8px}
+  details.join input{flex:1 1 auto;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:transparent;color:var(--ink);font-size:14px}
+  details.join button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:9px 14px;font-size:14px;cursor:pointer}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Att göra</h1>
-  <p class="sub">Lägg till en sak, sätt ett datum, bocka av när den är klar. Allt sparas i din webbläsare — inget konto, funkar offline.</p>
+  <p class="sub">Lägg till en sak, sätt ett datum, bocka av när den är klar. Synkar mellan dina enheter med en privat kod.</p>
 
   <div class="card">
-    <form id="add">
+    <div class="syncbar">
+      <span class="lbl">Din synk-kod:</span>
+      <span class="code" id="code" title="Klicka för att markera">…</span>
+      <button type="button" id="copy">Kopiera</button>
+      <span class="status" id="status"><span class="d"></span><span id="statustxt">…</span></span>
+    </div>
+    <details class="join">
+      <summary>Använd samma lista på en annan enhet</summary>
+      <div class="row">
+        <input type="text" id="joincode" placeholder="Klistra in synk-koden från din andra enhet" autocomplete="off">
+        <button type="button" id="joinbtn">Anslut</button>
+      </div>
+      <p class="hint">Öppna den här sidan på din andra enhet, klistra in koden ovan och tryck Anslut — så visas samma lista där. Spara koden någonstans; den som har koden når listan.</p>
+    </details>
+  </div>
+
+  <div class="card">
+    <form class="add" id="add">
       <input type="text" id="title" placeholder="Vad ska göras?" autocomplete="off" required>
       <input type="date" id="date" required>
       <button class="add" type="submit">Lägg till</button>
@@ -129,86 +159,136 @@
 <script>
 (function(){
   "use strict";
-  var KEY="attgora.v1";
+  var API="https://187-77-90-218.sslip.io/todo/api/";
+  var LKEY="attgora.v1";       // local cache of items
+  var IDKEY="attgora.syncid";  // this device's sync code
   var DOW=["Mån","Tis","Ons","Tor","Fre","Lör","Sön"];
   var MON=["januari","februari","mars","april","maj","juni","juli","augusti","september","oktober","november","december"];
 
-  var items=load();
-  var viewY, viewM;           // calendar month being shown
-  var filterDay=null;         // "YYYY-MM-DD" or null = show all upcoming
+  var items=loadLocal();
+  var viewY, viewM, filterDay=null, syncId=null, pushTimer=null, pulling=false;
 
   var today=new Date(); today.setHours(0,0,0,0);
   viewY=today.getFullYear(); viewM=today.getMonth();
+  var TODAY_ISO=iso(today);
 
-  function load(){ try{ return JSON.parse(localStorage.getItem(KEY))||[]; }catch(e){ return []; } }
-  function save(){ localStorage.setItem(KEY, JSON.stringify(items)); }
+  // ---------- storage helpers ----------
+  function loadLocal(){ try{ var d=JSON.parse(localStorage.getItem(LKEY)); return (d&&d.items)?d.items:(Array.isArray(d)?d:[]); }catch(e){ return []; } }
+  function saveLocal(){ try{ localStorage.setItem(LKEY, JSON.stringify({items:items})); }catch(e){} }
   function uid(){ return Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36); }
   function iso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
   function parse(s){ var p=s.split("-"); return new Date(+p[0],+p[1]-1,+p[2]); }
-  var TODAY_ISO=iso(today);
+  function genId(){ var a=new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a).map(function(b){return b.toString(16).padStart(2,"0");}).join(""); }
+  function validId(s){ return /^[a-f0-9]{32}$/.test(s); }
 
-  // ---- add ----
+  // ---------- sync ----------
+  function setStatus(kind,txt){
+    var el=document.getElementById("status");
+    el.className="status"+(kind?" "+kind:"");
+    document.getElementById("statustxt").textContent=txt;
+  }
+  function initSyncId(){
+    var h=(location.hash||"").replace(/^#/,"").trim().toLowerCase();
+    if(validId(h)){ syncId=h; localStorage.setItem(IDKEY,syncId); }
+    else {
+      syncId=localStorage.getItem(IDKEY);
+      if(!validId(syncId)){ syncId=genId(); localStorage.setItem(IDKEY,syncId); }
+    }
+    document.getElementById("code").textContent=syncId;
+    try{ history.replaceState(null,"","#"+syncId); }catch(e){}
+  }
+  function pull(afterMerge){
+    setStatus("","synkar…");
+    fetch(API+syncId,{cache:"no-store"}).then(function(r){ return r.ok?r.json():Promise.reject(); })
+    .then(function(data){
+      var srv=(data&&Array.isArray(data.items))?data.items:[];
+      if(srv.length){ items=srv; saveLocal(); }         // server is source of truth if it has anything
+      else if(items.length){ push(true); }              // migrate this device's existing list up
+      setStatus("ok","synkad");
+      render();
+      if(afterMerge) afterMerge();
+    })
+    .catch(function(){ setStatus("off","offline – sparat lokalt"); render(); });
+  }
+  function push(now){
+    clearTimeout(pushTimer);
+    var doPush=function(){
+      setStatus("","synkar…");
+      fetch(API+syncId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:items})})
+      .then(function(r){ setStatus(r.ok?"ok":"off", r.ok?"synkad":"offline – sparat lokalt"); })
+      .catch(function(){ setStatus("off","offline – sparat lokalt"); });
+    };
+    if(now) doPush(); else pushTimer=setTimeout(doPush,600);
+  }
+  function changed(){ saveLocal(); render(); push(false); }
+
+  // ---------- add ----------
   document.getElementById("add").addEventListener("submit",function(e){
     e.preventDefault();
     var t=document.getElementById("title").value.trim();
     var d=document.getElementById("date").value;
     if(!t||!d) return;
     items.push({id:uid(),title:t,date:d,done:false});
-    save();
     document.getElementById("title").value="";
-    // jump calendar to the month of the thing you just added
     var pd=parse(d); viewY=pd.getFullYear(); viewM=pd.getMonth();
-    render();
+    changed();
     document.getElementById("title").focus();
   });
-
-  // default date field to today
   document.getElementById("date").value=TODAY_ISO;
 
-  // ---- calendar nav ----
+  // ---------- sync UI ----------
+  document.getElementById("copy").onclick=function(){
+    var ok=function(){ var b=document.getElementById("copy"); b.textContent="Kopierad!"; setTimeout(function(){b.textContent="Kopiera";},1400); };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(syncId).then(ok,function(){}); }
+    else { var r=document.createRange(); r.selectNode(document.getElementById("code")); getSelection().removeAllRanges(); getSelection().addRange(r); try{document.execCommand("copy");ok();}catch(e){} }
+  };
+  document.getElementById("joinbtn").onclick=function(){
+    var v=document.getElementById("joincode").value.trim().toLowerCase();
+    if(!validId(v)){ alert("Koden ska vara 32 tecken (a–f och 0–9). Kolla att du kopierade hela."); return; }
+    if(v===syncId){ document.getElementById("joincode").value=""; return; }
+    syncId=v; localStorage.setItem(IDKEY,syncId);
+    document.getElementById("code").textContent=syncId;
+    try{ history.replaceState(null,"","#"+syncId); }catch(e){}
+    document.getElementById("joincode").value="";
+    items=[]; saveLocal();          // adopt the joined list from the server
+    pull();
+  };
+
+  // ---------- calendar nav ----------
   document.getElementById("prev").onclick=function(){ viewM--; if(viewM<0){viewM=11;viewY--;} render(); };
   document.getElementById("next").onclick=function(){ viewM++; if(viewM>11){viewM=0;viewY++;} render(); };
   document.getElementById("gotoday").onclick=function(){ viewY=today.getFullYear(); viewM=today.getMonth(); filterDay=null; render(); };
   document.getElementById("showall").onclick=function(){ filterDay=null; render(); };
 
-  // ---- render ----
-  function statusOf(it){
-    if(it.done) return "done";
-    if(it.date < TODAY_ISO) return "over";
-    if(it.date === TODAY_ISO) return "today";
-    return "up";
-  }
+  // re-pull when the tab regains focus (pick up edits from the other device)
+  document.addEventListener("visibilitychange",function(){ if(!document.hidden) pull(); });
+
+  // ---------- render ----------
+  function statusOf(it){ if(it.done) return "done"; if(it.date<TODAY_ISO) return "over"; if(it.date===TODAY_ISO) return "today"; return "up"; }
 
   function render(){
-    // dow header
     var dowEl=document.getElementById("dow");
     if(!dowEl.childNodes.length){ DOW.forEach(function(n){ var c=document.createElement("div"); c.className="dow"; c.textContent=n; dowEl.appendChild(c); }); }
-
     document.getElementById("monthlabel").textContent=MON[viewM]+" "+viewY;
 
-    // group items by date for dots
-    var byDay={};
-    items.forEach(function(it){ (byDay[it.date]=byDay[it.date]||[]).push(it); });
+    var byDay={}; items.forEach(function(it){ (byDay[it.date]=byDay[it.date]||[]).push(it); });
 
-    // build month grid (Mon-first)
     var cal=document.getElementById("cal"); cal.innerHTML="";
     var first=new Date(viewY,viewM,1);
-    var startPad=(first.getDay()+6)%7;               // Mon=0
+    var startPad=(first.getDay()+6)%7;
     var daysInMonth=new Date(viewY,viewM+1,0).getDate();
     var prevDays=new Date(viewY,viewM,0).getDate();
-
     for(var i=0;i<startPad;i++){ cal.appendChild(dayCell(prevDays-startPad+1+i,true,null)); }
     for(var d=1;d<=daysInMonth;d++){
       var ds=viewY+"-"+String(viewM+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
       cal.appendChild(dayCell(d,false,ds,byDay[ds]));
     }
-    var total=startPad+daysInMonth; var tail=(7-(total%7))%7;
+    var total=startPad+daysInMonth, tail=(7-(total%7))%7;
     for(var j=1;j<=tail;j++){ cal.appendChild(dayCell(j,true,null)); }
 
-    renderList(byDay);
+    renderList();
     document.getElementById("foot").textContent = items.length ? (openCount()+" kvar · "+doneCount()+" klara") : "";
   }
-
   function dayCell(num,pad,ds,dayItems){
     var el=document.createElement("div");
     el.className="day"+(pad?" pad":"");
@@ -220,9 +300,7 @@
     var n=document.createElement("div"); n.textContent=num; el.appendChild(n);
     var dots=document.createElement("div"); dots.className="dots";
     if(dayItems&&dayItems.length){
-      var kinds={};
-      dayItems.forEach(function(it){ kinds[statusOf(it)]=true; });
-      // show up to 3 dots: overdue/today, upcoming, done
+      var kinds={}; dayItems.forEach(function(it){ kinds[statusOf(it)]=true; });
       if(kinds.over) dots.appendChild(mkdot("over"));
       if(kinds.today) dots.appendChild(mkdot(""));
       if(kinds.up) dots.appendChild(mkdot(""));
@@ -232,84 +310,53 @@
     return el;
   }
   function mkdot(cls){ var d=document.createElement("span"); d.className="dot"+(cls?" "+cls:""); return d; }
-
   function openCount(){ return items.filter(function(i){return !i.done;}).length; }
   function doneCount(){ return items.filter(function(i){return i.done;}).length; }
 
-  function renderList(byDay){
+  function renderList(){
     var list=document.getElementById("list"); list.innerHTML="";
-    var title=document.getElementById("listtitle");
-    var showall=document.getElementById("showall");
-
+    var title=document.getElementById("listtitle"), showall=document.getElementById("showall");
     var shown;
     if(filterDay){
       shown=items.filter(function(i){return i.date===filterDay;});
-      var fd=parse(filterDay);
-      title.textContent=fd.getDate()+" "+MON[fd.getMonth()];
-      showall.style.display="inline";
-    } else {
-      shown=items.slice();
-      title.textContent="Allt framöver";
-      showall.style.display="none";
-    }
-
-    // sort: open first by date, then done last by date
-    shown.sort(function(a,b){
-      if(a.done!==b.done) return a.done?1:-1;
-      return a.date<b.date?-1:a.date>b.date?1:0;
-    });
-
+      var fd=parse(filterDay); title.textContent=fd.getDate()+" "+MON[fd.getMonth()]; showall.style.display="inline";
+    } else { shown=items.slice(); title.textContent="Allt framöver"; showall.style.display="none"; }
+    shown.sort(function(a,b){ if(a.done!==b.done) return a.done?1:-1; return a.date<b.date?-1:a.date>b.date?1:0; });
     document.getElementById("empty").style.display = shown.length? "none":"block";
 
     shown.forEach(function(it){
-      var li=document.createElement("li");
-      li.className="item"+(it.done?" done":"");
-
-      var chk=document.createElement("div");
-      chk.className="check"+(it.done?" on":"");
-      chk.setAttribute("role","checkbox");
-      chk.setAttribute("aria-checked",it.done?"true":"false");
-      chk.onclick=function(){ it.done=!it.done; save(); render(); };
+      var li=document.createElement("li"); li.className="item"+(it.done?" done":"");
+      var chk=document.createElement("div"); chk.className="check"+(it.done?" on":"");
+      chk.setAttribute("role","checkbox"); chk.setAttribute("aria-checked",it.done?"true":"false");
+      chk.onclick=function(){ it.done=!it.done; changed(); };
       li.appendChild(chk);
-
       var body=document.createElement("div"); body.className="body";
-      var ttl=document.createElement("div"); ttl.className="ttl"; ttl.textContent=it.title;
-      body.appendChild(ttl);
-
+      var ttl=document.createElement("div"); ttl.className="ttl"; ttl.textContent=it.title; body.appendChild(ttl);
       var st=statusOf(it);
-      var when=document.createElement("div");
-      when.className="when"+(st==="over"?" over":st==="today"?" today":"");
-      when.textContent=friendly(it.date,st);
-      body.appendChild(when);
+      var when=document.createElement("div"); when.className="when"+(st==="over"?" over":st==="today"?" today":"");
+      when.textContent=friendly(it.date,st); body.appendChild(when);
       li.appendChild(body);
-
-      var del=document.createElement("button");
-      del.className="del"; del.textContent="×"; del.title="Ta bort";
-      del.onclick=function(){
-        items=items.filter(function(x){return x.id!==it.id;});
-        save(); render();
-      };
+      var del=document.createElement("button"); del.className="del"; del.textContent="×"; del.title="Ta bort";
+      del.onclick=function(){ items=items.filter(function(x){return x.id!==it.id;}); changed(); };
       li.appendChild(del);
-
       list.appendChild(li);
     });
   }
-
   function friendly(ds,st){
     var d=parse(ds);
     var label=d.getDate()+" "+MON[d.getMonth()]+(d.getFullYear()!==today.getFullYear()?" "+d.getFullYear():"");
     if(st==="today") return "Idag · "+label;
-    if(st==="over"){
-      var days=Math.round((today-d)/86400000);
-      return (days===1?"Igår":days+" dagar sen")+" · "+label;
-    }
+    if(st==="over"){ var days=Math.round((today-d)/86400000); return (days===1?"Igår":days+" dagar sen")+" · "+label; }
     var ahead=Math.round((d-today)/86400000);
     if(ahead===1) return "Imorgon · "+label;
     if(ahead<=7) return "Om "+ahead+" dagar · "+label;
     return label;
   }
 
+  // ---------- boot ----------
+  initSyncId();
   render();
+  pull();
 })();
 </script>
 </body>
