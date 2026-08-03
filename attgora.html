@@ -110,16 +110,18 @@
     <div class="syncbar">
       <span class="lbl">Din synk-kod:</span>
       <span class="code" id="code" title="Klicka för att markera">…</span>
-      <button type="button" id="copy">Kopiera</button>
+      <button type="button" id="copy">Kopiera kod</button>
+      <button type="button" id="copylink">Kopiera synk-länk</button>
       <span class="status" id="status"><span class="d"></span><span id="statustxt">…</span></span>
     </div>
     <details class="join">
       <summary>Använd samma lista på en annan enhet</summary>
+      <p class="hint" style="margin-top:8px">Enklast: tryck <b>Kopiera synk-länk</b> ovan och öppna den länken på din andra enhet — då dyker samma lista upp direkt. (Eller: kopiera koden, klistra in den nedan på den andra enheten och tryck Anslut.)</p>
       <div class="row">
         <input type="text" id="joincode" placeholder="Klistra in synk-koden från din andra enhet" autocomplete="off">
         <button type="button" id="joinbtn">Anslut</button>
       </div>
-      <p class="hint">Öppna den här sidan på din andra enhet, klistra in koden ovan och tryck Anslut — så visas samma lista där. Spara koden någonstans; den som har koden når listan.</p>
+      <p class="hint">Spara länken/koden någonstans tryggt — den som har den når listan. För att se en ändring från din andra enhet: växla till den fliken (den uppdaterar då automatiskt).</p>
     </details>
   </div>
 
@@ -237,11 +239,14 @@
   document.getElementById("date").value=TODAY_ISO;
 
   // ---------- sync UI ----------
-  document.getElementById("copy").onclick=function(){
-    var ok=function(){ var b=document.getElementById("copy"); b.textContent="Kopierad!"; setTimeout(function(){b.textContent="Kopiera";},1400); };
-    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(syncId).then(ok,function(){}); }
-    else { var r=document.createRange(); r.selectNode(document.getElementById("code")); getSelection().removeAllRanges(); getSelection().addRange(r); try{document.execCommand("copy");ok();}catch(e){} }
-  };
+  function flash(btn,label){ var old=btn.textContent; btn.textContent=label; setTimeout(function(){btn.textContent=old;},1400); }
+  function copyText(txt,btn){
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){flash(btn,"Kopierad!");},function(){}); }
+    else { var ta=document.createElement("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");flash(btn,"Kopierad!");}catch(e){} document.body.removeChild(ta); }
+  }
+  function syncLink(){ return location.origin+location.pathname+"#"+syncId; }
+  document.getElementById("copy").onclick=function(){ copyText(syncId,this); };
+  document.getElementById("copylink").onclick=function(){ copyText(syncLink(),this); };
   document.getElementById("joinbtn").onclick=function(){
     var v=document.getElementById("joincode").value.trim().toLowerCase();
     if(!validId(v)){ alert("Koden ska vara 32 tecken (a–f och 0–9). Kolla att du kopierade hela."); return; }
