@@ -38,6 +38,8 @@
   /* Hela månaden ska synas (Kricko 2026-11-02: "skrollfunktionen har trillat bort"): smalare dagrutor i månadsvyn,
      och en ALLTID synlig rullist som reserv på smala skärmar / vid zoom. */
   .mgrid .cellsel{min-width:24px}
+  .mgrid .namecell{width:1%}          /* namnkolumnen bara så bred som namnen; resten av bredden delas av dagarna (Kricko-skärmbild 11-02) */
+  .mgrid td.daycell{width:auto;min-width:26px}
   .mgrid{overflow-x:scroll !important;scrollbar-width:auto;scrollbar-color:#8a9bb5 #eef2f7;padding-bottom:2px}
   .mgrid::-webkit-scrollbar{height:14px}
   .mgrid::-webkit-scrollbar-track{background:#eef2f7;border-radius:7px}
