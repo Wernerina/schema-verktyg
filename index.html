@@ -66,6 +66,10 @@
     .wrap{ padding:0; }
     .panel{ border:none; padding:0; margin:0 0 6px; box-shadow:none; }
     .panel[style]{ overflow:visible !important; }   /* schemat ligger i en scroll-ruta */
+    /* Utskrift = grundschemat + veckotimmar per person, inget annat (Kricko 2026-11-02) */
+    .wrap > .panel:not(.printme){ display:none !important; }
+    #hoursTable{ overflow:visible !important; }
+    .printme h2 .muted{ display:none; }
     table{ font-size:8px; width:100%; table-layout:fixed; }
     th,td{ border:1px solid #999; padding:0; }
     .namecell{ position:static; width:74px; font-size:8px; white-space:normal; }
@@ -105,9 +109,9 @@
     <button onclick="addStaff()" class="small">+ Lägg till person</button>
   </div>
 
-  <div class="panel" style="overflow-x:auto">
+  <div class="panel printme" style="overflow-x:auto">
     <h2>Schema — 6 veckor <span class="muted">(välj pass i listan i varje ruta)</span></h2>
-    <div class="muted small no-print" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span> &nbsp; <button class="small" onclick="window.print()">🖨️ Skriv ut alla veckor</button>
+    <div class="muted small no-print" style="margin-bottom:8px">📅 Startdatum (måndag i vecka 1): <input type="date" id="startDate" onchange="setStart(this.value)"> <span class="muted">— lämna tomt för bara veckonummer.</span> &nbsp; <button class="small" onclick="window.print()">🖨️ Skriv ut grundschema + veckotimmar</button>
     <br><span class="muted">Klicka i en ruta och välj pass i listan. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten <b>på</b> passet (t.ex. dygn minus jour). Du får då frågan om det gäller <b>hela passet</b> eller bara en del — t.ex. skriv <b>12:00</b> om personen jobbade fram till 12:00 och sedan gick hem, eller <b>till 12:00</b> om hen var ledig fram till 12:00 och kom in sedan.<br>Jobbade någon en <b>avvikande tid</b> (t.ex. 11–23)? Välj <b>⏱ Avvikande tid…</b> längst ner i listan och skriv från–till — då behöver du inte skapa en ny passtyp.</span></div>
     <div id="leavebar" class="no-print" style="margin-bottom:8px;display:none">
       <span class="muted small">Läge:</span>
@@ -121,7 +125,7 @@
     <div id="grid"></div>
   </div>
 
-  <div class="panel">
+  <div class="panel printme">
     <h2>Veckotimmar per person <span class="muted">(timmar/vecka + total)</span></h2>
     <div id="hoursTable" style="overflow-x:auto"></div>
   </div>
