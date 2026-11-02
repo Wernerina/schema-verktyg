@@ -35,6 +35,13 @@
   .devcell{box-shadow:inset 0 0 0 2px #2b6cb0}
   .mgrid td.daycell{width:26px;height:26px;font-size:11px}
   .mgrid th{font-size:10px;padding:2px}
+  /* Hela månaden ska synas (Kricko 2026-11-02: "skrollfunktionen har trillat bort"): smalare dagrutor i månadsvyn,
+     och en ALLTID synlig rullist som reserv på smala skärmar / vid zoom. */
+  .mgrid .cellsel{min-width:24px}
+  .mgrid{overflow-x:scroll !important;scrollbar-width:auto;scrollbar-color:#8a9bb5 #eef2f7;padding-bottom:2px}
+  .mgrid::-webkit-scrollbar{height:14px}
+  .mgrid::-webkit-scrollbar-track{background:#eef2f7;border-radius:7px}
+  .mgrid::-webkit-scrollbar-thumb{background:#8a9bb5;border-radius:7px;border:3px solid #eef2f7}
   .lockbadge{font-size:11px;color:#2b6cb0;font-weight:600}
   .cellsel{width:100%;height:100%;min-width:34px;border:none;background:transparent;font:inherit;font-weight:700;text-align:center;text-align-last:center;color:inherit;cursor:pointer;padding:0;-webkit-appearance:none;appearance:none}
   .cellsel:hover{outline:2px solid var(--head);outline-offset:-2px}
