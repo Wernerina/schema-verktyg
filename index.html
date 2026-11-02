@@ -610,21 +610,30 @@ function monthHours(si,year,month){
   }
   return tot/60;
 }
-// Klarmarkera t.o.m. ett datum: frys det som gäller nu (grundschema+avvikelser) för varje dag från start t.o.m. datumet.
-function finalizeThrough(iso){
-  if(!iso || !S.startDate) return;
-  const start=new Date(S.startDate+'T00:00:00'); if(isNaN(start)) return;
-  const end=new Date(iso+'T00:00:00'); if(isNaN(end)) return;
+// Frys det som gäller nu (grundschema+avvikelser) för varje dag från start t.o.m. datumet.
+// Även LEDIGA dagar fryses (som "") — annars kunde ett nytt pass i grundschemat smita in på en ledig dag i en gammal månad (Hearth 2026-11-02).
+function freezeThrough(iso){
+  if(!iso || !S.startDate) return false;
+  const start=new Date(S.startDate+'T00:00:00'); if(isNaN(start)) return false;
+  const end=new Date(iso+'T00:00:00'); if(isNaN(end)) return false;
   for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
     const k=isoDate(d); if(!S.frozen[k]) S.frozen[k]={};
-    S.staff.forEach((n,si)=>{ if(S.frozen[k][si]==null){ const v=effectiveCell(d,si); if(v) S.frozen[k][si]=v; } });
+    S.staff.forEach((n,si)=>{ if(S.frozen[k][si]==null){ S.frozen[k][si]=effectiveCell(d,si)||""; } });
   }
+  return true;
+}
+// Klarmarkera t.o.m. ett datum.
+function finalizeThrough(iso){
+  if(!freezeThrough(iso)) return;
   if(!S.lockedThrough || iso>S.lockedThrough) S.lockedThrough=iso;
   render();
 }
-// "Grundschema-ändringar gäller from [datum]" → klarmarkera t.o.m. dagen INNAN (så nya basändringar syns from datumet;
-// redan gjorda avvikelser ligger kvar eftersom de vinner över allt).
-function applyBaseFrom(iso){ if(!iso){ return; } const d=new Date(iso+'T00:00:00'); if(isNaN(d)) return; d.setDate(d.getDate()-1); S.lockedThrough=isoDate(d); render(); }
+// "Grundschema-ändringar gäller from [datum]" → frys allt t.o.m. dagen INNAN som det ser ut NU, och lås dit.
+// Gör detta INNAN grundschemat ändras. (Förr flyttades bara låsdatumet utan att frysa, så gamla månader följde ändå med — Hearth 2026-11-02.)
+function applyBaseFrom(iso){
+  if(!iso) return; const d=new Date(iso+'T00:00:00'); if(isNaN(d)) return; d.setDate(d.getDate()-1);
+  const prev=isoDate(d); if(!freezeThrough(prev)) return; S.lockedThrough=prev; render();
+}
 function clearLock(){ S.lockedThrough=''; render(); }
 // Klick i en månadsruta: bygg-läge cyklar arbetspass som avvikelse; markera-läge lägger sjuk/VAB/… som avvikelse.
 function onMonthCell(iso,si){
@@ -775,9 +784,9 @@ function renderMonthly(){
   if(!S.startDate){ el.innerHTML=cfg+'<p class="muted">Sätt <b>startdatum</b> i schemat ovan (måndag i vecka 1) så fylls månaderna i automatiskt från 6-veckorsschemat.</p>'; return; }
   const lockLine=`<div class="muted small no-print" style="margin-bottom:8px;border-top:1px solid var(--line);padding-top:8px">
     🔒 Klarmarkerat t.o.m.: <b>${S.lockedThrough||'– (inget ännu)'}</b>
-    &nbsp; Grundschema-ändringar gäller from: <input type="date" onchange="applyBaseFrom(this.value)">
+    &nbsp; Grundschema-ändringar gäller from: <input type="date" title="Välj datumet INNAN du ändrar grundschemat — då fryses allt före datumet som det ser ut nu." onchange="applyBaseFrom(this.value)">
     ${S.lockedThrough?` &nbsp;<button class="small" onclick="clearLock()">Lås upp alla</button>`:''}
-    <br><span class="muted">Öppna en månad och <b>välj pass i listan</b> i varje ruta för att ändra/markera avvikelser. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten på passet (t.ex. dygn minus jour). <b>Klarmarkera</b> fryser månaden så att senare ändringar i grundschemat inte påverkar den — de slår bara igenom från datumet du anger. Medvetna avvikelser ligger alltid kvar.</span></div>`;
+    <br><span class="muted">Öppna en månad och <b>välj pass i listan</b> i varje ruta för att ändra/markera avvikelser. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten på passet (t.ex. dygn minus jour). <b>Klarmarkera</b> fryser månaden så att senare ändringar i grundschemat inte påverkar den — de slår bara igenom från datumet du anger. Medvetna avvikelser ligger alltid kvar. <b>Ordning:</b> välj först datumet i ”gäller from”, ändra sedan grundschemat.</span></div>`;
   const year=S.calYear;
   let h=cfg+lockLine;
   [['Första halvåret',[0,1,2,3,4,5],0],['Andra halvåret',[6,7,8,9,10,11],1]].forEach(([title,months,hi])=>{
