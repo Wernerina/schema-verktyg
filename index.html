@@ -70,7 +70,7 @@
     .panel[style]{ overflow:visible !important; }   /* schemat ligger i en scroll-ruta */
     /* Utskrift = grundschemat + veckotimmar per person, inget annat (Kricko 2026-11-02) */
     .wrap > .panel:not(.printme){ display:none !important; }
-    #hoursTable{ overflow:visible !important; }
+    #hoursTable, #hoursTableNoJour{ overflow:visible !important; }
     .printme h2 .muted{ display:none; }
     .gdate{ display:none; }   /* grundschemat skrivs ut utan datum, bara veckodagar (Kricko 2026-11-02) */
     table{ font-size:8px; width:100%; table-layout:fixed; }
@@ -131,6 +131,8 @@
   <div class="panel printme">
     <h2>Veckotimmar per person <span class="muted">(timmar/vecka + total)</span></h2>
     <div id="hoursTable" style="overflow-x:auto"></div>
+    <h2 style="margin-top:14px">Veckotimmar utan jour <span class="muted">(jouren 00:00–05:20 räknas bort; ledighet räknas som ovan)</span></h2>
+    <div id="hoursTableNoJour" style="overflow-x:auto"></div>
   </div>
 
   <div class="panel">
@@ -580,9 +582,19 @@ function countedMin(code, p){
   }
   return tot;
 }
-function weekHoursData(si){
+// Timmar för en cell UTAN jour (Kricko 2026-11-09): som cellWorkHours, men den ARBETADE delen av ett pass
+// som har jour tappar sin överlapp med jourfönstret 00:00–05:20 i varje dygn passet går över (dygnspass X:
+// 24 h − 5 h 20 min = 18 h 40 min). Ledighet räknas redan utan jour; avvikande pass har ingen jour.
+function cellNoJourHours(c){
+  const h=cellWorkHours(c), pc=parseCell(c);
+  if(!pc.base || isAdhoc(pc.base)) return h;
+  const sh=shiftByCode(pc.base); if(!(sh && sh.jour)) return h;
+  let jm=0; workedLeaveIvs(c,0).worked.forEach(iv=>{ for(let p=0;p<3;p++) jm+=_ovl(iv[0],iv[1],p*1440,p*1440+JOUR_LEN); });
+  return Math.max(0, h - jm/60);
+}
+function weekHoursData(si, noJour){
   const wk=[0,0,0,0,0,0];
-  for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(!c) continue; wk[Math.floor(d/7)] += cellWorkHours(c); }
+  for(let d=0;d<NDAYS;d++){ const c=cell(si,d); if(!c) continue; wk[Math.floor(d/7)] += noJour ? cellNoJourHours(c) : cellWorkHours(c); }
   return {wk, tot:wk.reduce((a,b)=>a+b,0)};
 }
 // ---- Månadsöversikt & halvårskoll (projektion av 6-veckorsschemat på riktiga datum) ----
@@ -838,18 +850,19 @@ function renderMonthly(){
 }
 // Veckotimmar i en egen lista (flyttad ut ur namnkolumnen så att schemat blir smalare
 // och alla 6 veckor får plats på skärmen även med datum). Önskat av Kricko 2026-06-07.
-function renderHoursTable(){
+function renderHoursTable(){ hoursTableInto("hoursTable", false); hoursTableInto("hoursTableNoJour", true); }
+function hoursTableInto(id, noJour){
   let h='<table><thead><tr><th class="namecell" style="text-align:left">Personal</th>';
   for(let w=0;w<6;w++) h+=`<th>V${w+1}</th>`;
   h+='<th>Σ totalt</th></tr></thead><tbody>';
   S.staff.forEach((name,si)=>{
-    const {wk,tot}=weekHoursData(si);
+    const {wk,tot}=weekHoursData(si, noJour);
     h+=`<tr><td class="namecell" style="text-align:left">${name}</td>`
       + wk.map(x=>`<td>${x?x.toFixed(1):'–'}</td>`).join('')
       + `<td class="tot">${tot.toFixed(1)} h</td></tr>`;
   });
   h+='</tbody></table>';
-  document.getElementById("hoursTable").innerHTML=h;
+  document.getElementById(id).innerHTML=h;
 }
 function renderIssues(issues){
   const el=document.getElementById("issues");
