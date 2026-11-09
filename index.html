@@ -72,7 +72,8 @@
     .wrap > .panel:not(.printme){ display:none !important; }
     #hoursTable, #hoursTableNoJour{ overflow:visible !important; }
     .printme h2 .muted{ display:none; }
-    .gdate{ display:none; }   /* grundschemat skrivs ut utan datum, bara veckodagar (Kricko 2026-11-02) */
+    .gdate{ display:none; }
+    .zerorow{ display:none; }   /* personal med 0 timmar i grundschemat skrivs inte ut (Kricko 2026-11-09) */   /* grundschemat skrivs ut utan datum, bara veckodagar (Kricko 2026-11-02) */
     table{ font-size:8px; width:100%; table-layout:fixed; }
     th,td{ border:1px solid #999; padding:0; }
     .namecell{ position:static; width:74px; font-size:8px; white-space:normal; }
@@ -523,7 +524,7 @@ function renderGrid(violCells){
   for(let w=0;w<6;w++) for(let d=0;d<7;d++){ const dt=dateForDay(w*7+d); h+=`<th class="${d===6?'sun':d===5?'sat':''}">${DAYS[d]}${dt?'<span class="gdate"><br><span class="small" style="font-weight:400">'+dt+'</span></span>':''}</th>`; }
   h+='</tr></thead><tbody>';
   S.staff.forEach((name,si)=>{
-    h+=`<tr><td class="namecell">${name}</td>`;
+    h+=`<tr${weekHoursData(si).tot?'':' class="zerorow"'}><td class="namecell">${name}</td>`;
     for(let d=0;d<NDAYS;d++){
       const c=cell(si,d); const p=parseCell(c); const isAd=isAdhoc(p.base);
       const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=(!isAd&&p.base)?shiftByCode(p.base):null;
@@ -858,7 +859,8 @@ function hoursTableInto(id, noJour){
   h+='<th>Σ totalt</th></tr></thead><tbody>';
   S.staff.forEach((name,si)=>{
     const {wk,tot}=weekHoursData(si, noJour);
-    h+=`<tr><td class="namecell" style="text-align:left">${name}</td>`
+    // samma regel i alla tre tabeller: 0 timmar i grundschemat (med jour) → raden skrivs inte ut
+    h+=`<tr${weekHoursData(si).tot?'':' class="zerorow"'}><td class="namecell" style="text-align:left">${name}</td>`
       + wk.map(x=>`<td>${x?x.toFixed(1):'–'}</td>`).join('')
       + `<td class="tot">${tot.toFixed(1)} h</td></tr>`;
   });
