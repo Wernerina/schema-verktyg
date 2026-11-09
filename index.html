@@ -38,6 +38,7 @@
   /* Hela månaden ska synas (Kricko 2026-11-02: "skrollfunktionen har trillat bort"): smalare dagrutor i månadsvyn,
      och en ALLTID synlig rullist som reserv på smala skärmar / vid zoom. */
   .mgrid .cellsel{min-width:24px}
+  .fnmark, .fnotes{display:none}
   .mgrid .namecell{width:1%}          /* namnkolumnen bara så bred som namnen; resten av bredden delas av dagarna (Kricko-skärmbild 11-02) */
   .mgrid td.daycell{width:auto;min-width:26px}
   .mgrid{overflow-x:scroll !important;scrollbar-width:auto;scrollbar-color:#8a9bb5 #eef2f7;padding-bottom:2px}
@@ -73,7 +74,11 @@
     #hoursTable, #hoursTableNoJour{ overflow:visible !important; }
     .printme h2 .muted{ display:none; }
     .gdate{ display:none; }
-    .zerorow{ display:none; }   /* personal med 0 timmar i grundschemat skrivs inte ut (Kricko 2026-11-09) */   /* grundschemat skrivs ut utan datum, bara veckodagar (Kricko 2026-11-02) */
+    .zerorow{ display:none; }
+    /* avvikande tid / delvis ledig får inte plats i en ruta: kort märke i rutan + fotnot under schemat (Kricko 2026-11-09) */
+    .hasfn .cellsel{ display:none; }
+    .fnmark{ display:inline !important; font-weight:700; }
+    .fnotes{ display:block !important; font-size:8px; margin-top:3px; columns:2; }   /* personal med 0 timmar i grundschemat skrivs inte ut (Kricko 2026-11-09) */   /* grundschemat skrivs ut utan datum, bara veckodagar (Kricko 2026-11-02) */
     table{ font-size:8px; width:100%; table-layout:fixed; }
     th,td{ border:1px solid #999; padding:0; }
     .namecell{ position:static; width:74px; font-size:8px; white-space:normal; }
@@ -523,8 +528,10 @@ function renderGrid(violCells){
   h+='</tr><tr><th class="namecell"></th>';
   for(let w=0;w<6;w++) for(let d=0;d<7;d++){ const dt=dateForDay(w*7+d); h+=`<th class="${d===6?'sun':d===5?'sat':''}">${DAYS[d]}${dt?'<span class="gdate"><br><span class="small" style="font-weight:400">'+dt+'</span></span>':''}</th>`; }
   h+='</tr></thead><tbody>';
+  const notes=[];   // utskrift: långa rutor (avvikande tid, delvis ledig) blir *1, *2 … med fotnot under schemat
   S.staff.forEach((name,si)=>{
-    h+=`<tr${weekHoursData(si).tot?'':' class="zerorow"'}><td class="namecell">${name}</td>`;
+    const zero=!weekHoursData(si).tot;
+    h+=`<tr${zero?' class="zerorow"':''}><td class="namecell">${name}</td>`;
     for(let d=0;d<NDAYS;d++){
       const c=cell(si,d); const p=parseCell(c); const isAd=isAdhoc(p.base);
       const leaveSh=p.leave?shiftByCode(p.leave):null, baseSh=(!isAd&&p.base)?shiftByCode(p.base):null;
@@ -535,11 +542,17 @@ function renderGrid(violCells){
       const adBg=isAd&&!p.leave?'style="background:#e6f4ea"':'';
       const bg = violCells[si+"-"+d] ? '' : (dispSh?`style="background:${dispSh.color}"`:adBg);
       const cls = 'daycell '+(violCells[si+"-"+d]?'viol ':'')+(d%7===6?'sun':d%7===5?'sat':'');
-      h+=`<td class="${cls}" ${bg} title="${title}">${cellSelectHtml(c, `onCellSelectBase(${si},${d},this.value)`)}</td>`;
+      let fn='';
+      if(isAd || (p.base && p.leave && p.at!=null)){
+        if(!zero) notes.push(`*${notes.length+1} ${name}, v${Math.floor(d/7)+1} ${DAYS[d%7]}: ${isAd?('avvikande '+adhocLabel(p.base)):(p.base+' → '+p.leave+atTxt)} (${cellWorkHours(c).toFixed(1)} h, utan jour ${cellNoJourHours(c).toFixed(1)} h)`);
+        fn=zero?'':`<span class="fnmark">*${notes.length}</span>`;
+      }
+      h+=`<td class="${cls}${fn?' hasfn':''}" ${bg} title="${title}">${cellSelectHtml(c, `onCellSelectBase(${si},${d},this.value)`)}${fn}</td>`;
     }
     h+='</tr>';
   });
   h+='</tbody></table>';
+  if(notes.length) h+='<div class="fnotes">'+notes.map(t=>`<div>${t}</div>`).join('')+'</div>';
   document.getElementById("grid").innerHTML=h;
 }
 // Arbetstimmar för EN cell (en dag) — samma regel som veckototalen: ledig räknas som aktiv tid
