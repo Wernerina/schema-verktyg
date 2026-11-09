@@ -131,7 +131,7 @@
   <div class="panel printme">
     <h2>Veckotimmar per person <span class="muted">(timmar/vecka + total)</span></h2>
     <div id="hoursTable" style="overflow-x:auto"></div>
-    <h2 style="margin-top:14px">Veckotimmar utan jour <span class="muted">(jouren 00:00–05:20 räknas bort; ledighet räknas som ovan)</span></h2>
+    <h2 style="margin-top:14px">Veckotimmar utan jour <span class="muted">(allt arbete 00:00–05:20 räknas bort, även avvikande tid; ledighet räknas som ovan)</span></h2>
     <div id="hoursTableNoJour" style="overflow-x:auto"></div>
   </div>
 
@@ -584,11 +584,12 @@ function countedMin(code, p){
 }
 // Timmar för en cell UTAN jour (Kricko 2026-11-09): som cellWorkHours, men den ARBETADE delen av ett pass
 // som har jour tappar sin överlapp med jourfönstret 00:00–05:20 i varje dygn passet går över (dygnspass X:
-// 24 h − 5 h 20 min = 18 h 40 min). Ledighet räknas redan utan jour; avvikande pass har ingen jour.
+// 24 h − 5 h 20 min = 18 h 40 min). Ledighet räknas redan utan jour. Avvikande tid (⏱) tappar också den del
+// som ligger 00:00–05:20 (Kricko 2026-11-09: "Avvikande tid måste också jouren dras av").
 function cellNoJourHours(c){
   const h=cellWorkHours(c), pc=parseCell(c);
-  if(!pc.base || isAdhoc(pc.base)) return h;
-  const sh=shiftByCode(pc.base); if(!(sh && sh.jour)) return h;
+  if(!pc.base) return h;
+  if(!isAdhoc(pc.base)){ const sh=shiftByCode(pc.base); if(!(sh && sh.jour)) return h; }
   let jm=0; workedLeaveIvs(c,0).worked.forEach(iv=>{ for(let p=0;p<3;p++) jm+=_ovl(iv[0],iv[1],p*1440,p*1440+JOUR_LEN); });
   return Math.max(0, h - jm/60);
 }
