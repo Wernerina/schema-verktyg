@@ -676,6 +676,15 @@ function applyBaseFrom(iso){
   const prev=isoDate(d); if(!freezeThrough(prev)) return; S.lockedThrough=prev; render();
 }
 function clearLock(){ S.lockedThrough=''; render(); }
+// Rensa avvikelser för ett år (Kricko 2026-11-13: "nytt år ... rensa avvikelserna ... behålla grundschemat"). Tar bara bort S.dev på
+// dagar i året som INTE är klarmarkerade; grundschemat, frysta (klarmarkerade) dagar och andra år rörs inte.
+function devYearKeys(y){ return Object.keys(S.dev).filter(k=>k.slice(0,4)===String(y) && !isLocked(k)); }
+function clearDevYear(){
+  const y=S.calYear, keys=devYearKeys(y), n=keys.reduce((t,k)=>t+Object.keys(S.dev[k]).length,0);
+  if(!n){ alert('Det finns inga avvikelser att rensa i '+y+(S.lockedThrough?' (utanför klarmarkerade dagar)':'')+'.'); return; }
+  if(!confirm('Ta bort '+n+' avvikelse'+(n===1?'':'r')+' i '+y+'?\n\nMånaderna går tillbaka till grundschemat. Grundschemat ändras inte'+(S.lockedThrough?', och klarmarkerade dagar (t.o.m. '+S.lockedThrough+') ligger kvar som de är':'')+'.\n\nTips: exportera en backup först.')) return;
+  keys.forEach(k=>delete S.dev[k]); render();
+}
 // Klick i en månadsruta: bygg-läge cyklar arbetspass som avvikelse; markera-läge lägger sjuk/VAB/… som avvikelse.
 function onMonthCell(iso,si){
   const dt=new Date(iso+'T00:00:00'); const cur=effectiveCell(dt,si); const p=parseCell(cur);
@@ -826,6 +835,7 @@ function renderMonthly(){
   const lockLine=`<div class="muted small no-print" style="margin-bottom:8px;border-top:1px solid var(--line);padding-top:8px">
     🔒 Klarmarkerat t.o.m.: <b>${S.lockedThrough||'– (inget ännu)'}</b>
     &nbsp; Grundschema-ändringar gäller from: <input type="date" title="Välj datumet INNAN du ändrar grundschemat — då fryses allt före datumet som det ser ut nu." onchange="applyBaseFrom(this.value)">
+    &nbsp;<button class="small" onclick="clearDevYear()" title="Tar bort alla avvikelser i det valda året (utom klarmarkerade dagar). Grundschemat ändras inte.">🧹 Rensa avvikelser ${S.calYear}</button>
     ${S.lockedThrough?` &nbsp;<button class="small" onclick="clearLock()">Lås upp alla</button>`:''}
     <br><span class="muted">Öppna en månad och <b>välj pass i listan</b> i varje ruta för att ändra/markera avvikelser. Väljer du en ledig-kod (Sjuk/VAB/Semester/FP) på en dag med schemalagt pass läggs ledigheten på passet (t.ex. dygn minus jour). <b>Klarmarkera</b> fryser månaden så att senare ändringar i grundschemat inte påverkar den — de slår bara igenom från datumet du anger. Medvetna avvikelser ligger alltid kvar. <b>Ordning:</b> välj först datumet i ”gäller from”, ändra sedan grundschemat.</span></div>`;
   const year=S.calYear;
